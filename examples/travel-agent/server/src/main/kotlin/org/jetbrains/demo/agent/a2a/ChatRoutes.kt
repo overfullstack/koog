@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.jetbrains.demo.JourneyForm
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("ChatRoutes")
@@ -113,7 +114,7 @@ fun Application.chatRoutes(chatService: ChatService) {
                 val journeyFormJson = call.request.queryParameters["journeyForm"]
                 val journeyForm = journeyFormJson?.let { 
                     try {
-                        json.decodeFromString<org.jetbrains.demo.JourneyForm>(it)
+                        json.decodeFromString<JourneyForm>(it)
                     } catch (e: Exception) {
                         logger.warn("Failed to parse journeyForm: ${e.message}")
                         null

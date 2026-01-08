@@ -46,5 +46,4 @@ includeBuild("../../.") {
 }
 
 include(":server")
-include(":shared")
 include(":ktor-openid")

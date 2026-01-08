@@ -2,7 +2,6 @@ package org.jetbrains.demo
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.Serializable
 
 @Serializable

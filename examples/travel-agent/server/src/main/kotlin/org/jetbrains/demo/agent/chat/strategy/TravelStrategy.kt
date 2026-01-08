@@ -6,7 +6,6 @@ import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.dsl.extension.HistoryCompressionStrategy
 import ai.koog.agents.core.dsl.extension.nodeLLMCompressHistory
 import ai.koog.agents.ext.agent.subgraphWithTask
-import ai.koog.prompt.executor.clients.anthropic.AnthropicModels
 import ai.koog.prompt.markdown.markdown
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
