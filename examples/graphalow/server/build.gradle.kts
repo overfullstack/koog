@@ -13,6 +13,13 @@ application {
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
 }
 
+tasks.register<JavaExec>("runA2AServers") {
+    description = "Run the A2A mesh servers (Route Planner, POI Researcher, Plan Composer)"
+    group = "application"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("org.jetbrains.demo.agent.a2a.A2AServerLauncherKt")
+}
+
 group = "org.jetbrains.demo"
 version = "1.0.0"
 
