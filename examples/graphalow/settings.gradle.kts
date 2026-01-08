@@ -1,4 +1,4 @@
-rootProject.name = "travel-agent"
+rootProject.name = "graphalow"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
