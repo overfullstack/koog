@@ -25,7 +25,6 @@ kotlin {
 
 dependencies {
     implementation(project(":ktor-openid"))
-    implementation(project(":shared"))
     implementation("io.ktor:ktor-server-websockets:3.3.3")
     implementation(libs.logback)
     
