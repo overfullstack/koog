@@ -5,8 +5,6 @@ pluginManagement {
     repositories {
         google {
             mavenContent {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
                 includeGroupAndSubgroups("com.google")
             }
         }
@@ -23,8 +21,6 @@ dependencyResolutionManagement {
     repositories {
         google {
             mavenContent {
-                includeGroupAndSubgroups("androidx")
-                includeGroupAndSubgroups("com.android")
                 includeGroupAndSubgroups("com.google")
             }
         }
@@ -46,4 +42,3 @@ includeBuild("../../.") {
 }
 
 include(":server")
-include(":ktor-openid")

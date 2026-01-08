@@ -1,8 +1,5 @@
 [versions]
 agp = "8.12.3"
-android-compileSdk = "35"
-android-minSdk = "26"
-android-targetSdk = "35"
 androidx-activityCompose = "1.10.1"
 androidx-lifecycle = "2.9.1"
 androidx-navigation = "2.9.0-beta04"
@@ -13,6 +10,8 @@ coil = "3.3.0"
 credentials = "1.5.0"
 googleid-version = "1.1.1"
 kotlin = "2.3.0"
+ktorServerTestHostJvm = "3.3.3"
+ktorServerWebsockets = "3.3.3"
 logback = "1.5.23"
 kotlinx-serialization = "1.9.0"
 kotlinx-coroutines = "1.10.2"
@@ -28,9 +27,17 @@ postgresql = "42.7.7"
 flyway = "11.10.5"
 
 [libraries]
+a2a-client = { module = "ai.koog:a2a-client" }
+a2a-server = { module = "ai.koog:a2a-server" }
+agents-features-a2a-client = { module = "ai.koog:agents-features-a2a-client" }
+agents-features-a2a-server = { module = "ai.koog:agents-features-a2a-server" }
+a2a-transport-client-jsonrpc-http = { module = "ai.koog:a2a-transport-client-jsonrpc-http" }
+a2a-transport-server-jsonrpc-http = { module = "ai.koog:a2a-transport-server-jsonrpc-http" }
 androidx-credentials = { module = "androidx.credentials:credentials", version.ref = "credentials" }
 androidx-credentials-play-services-auth = { module = "androidx.credentials:credentials-play-services-auth", version.ref = "credentials" }
 googleid = { module = "com.google.android.libraries.identity.googleid:googleid", version.ref = "googleid-version" }
+koog-agents = { module = "ai.koog:koog-agents" }
+koog-ktor = { module = "ai.koog:koog-ktor" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
 kotlin-test-junit = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }
 kermit = { module = "co.touchlab:kermit", version.ref = "kermit" }
@@ -39,6 +46,8 @@ androidx-lifecycle-viewmodel = { module = "org.jetbrains.androidx.lifecycle:life
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-viewmodel-compose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "androidx-navigation" }
+ktor-server-test-host-jvm = { module = "io.ktor:ktor-server-test-host-jvm", version.ref = "ktorServerTestHostJvm" }
+ktor-server-websockets = { module = "io.ktor:ktor-server-websockets", version.ref = "ktorServerWebsockets" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
