@@ -21,10 +21,6 @@ import org.jetbrains.demo.agent.a2a.TravelOrchestratorAgent
 import org.jetbrains.demo.agent.a2a.a2aTravelAgentRoutes
 import org.jetbrains.demo.agent.a2a.chatRoutes
 import org.jetbrains.demo.agent.chat.agent
-import org.jetbrains.demo.user.ExposedUserRepository
-import org.jetbrains.demo.user.UserRepository
-import org.jetbrains.demo.user.userRoutes
-import org.jetbrains.demo.website.website
 import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
@@ -59,8 +55,6 @@ fun main() {
 }
 
 fun Application.app(config: AppConfig) {
-    val database = database(config.database)
-    val userRepository: UserRepository = ExposedUserRepository(database)
     install(Koog) {
         llm {
             openAI(apiKey = System.getenv("LLM_GATEWAY_KEY")) {
@@ -73,16 +67,13 @@ fun Application.app(config: AppConfig) {
         }
     }
 
-    configure(config)
+    configure()
     agent(config)
     
     // A2A Mesh mode (optional - can run alongside traditional agent)
     if (config.a2aEnabled) {
         a2aMesh(config)
     }
-    
-    website()
-    userRoutes(userRepository)
 }
 
 private fun Application.a2aMesh(config: AppConfig) {
@@ -112,20 +103,8 @@ private fun Application.a2aMesh(config: AppConfig) {
     log.info("Chat UI endpoints available at /chat/* (SSE: /chat/stream, WebSocket: /chat/ws)")
 }
 
-private fun Application.configure(config: AppConfig) {
+private fun Application.configure() {
     install(SSE)
-//    install(OpenIdConnect) {
-//        jwk(config.auth.issuer) {
-//            name = "google"
-//        }
-//        oauth(config.auth.issuer, config.auth.clientId, config.auth.secret) {
-//            loginUri { path("login") }
-//            logoutUri { path("logout") }
-//            refreshUri { path("refresh") }
-//            redirectUri { path("callback") }
-//            redirectOnSuccessUri { path("home") }
-//        }
-//    }
     install(WebSockets) {
         pingPeriod = 15.seconds
         timeout = 15.seconds

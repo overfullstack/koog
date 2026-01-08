@@ -31,18 +31,17 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":ktor-openid"))
-    implementation("io.ktor:ktor-server-websockets:3.3.3")
+    implementation(libs.ktor.server.websockets)
     implementation(libs.logback)
     
-    implementation("ai.koog:koog-agents")
-    implementation("ai.koog:koog-ktor")
-    implementation("ai.koog:a2a-server")
-    implementation("ai.koog:a2a-client")
-    implementation("ai.koog:a2a-transport-server-jsonrpc-http")
-    implementation("ai.koog:a2a-transport-client-jsonrpc-http")
-    implementation("ai.koog:agents-features-a2a-server")
-    implementation("ai.koog:agents-features-a2a-client")
+    implementation(libs.koog.agents)
+    implementation(libs.koog.ktor)
+    implementation(libs.a2a.server)
+    implementation(libs.a2a.client)
+    implementation(libs.a2a.transport.server.jsonrpc.http)
+    implementation(libs.a2a.transport.client.jsonrpc.http)
+    implementation(libs.agents.features.a2a.server)
+    implementation(libs.agents.features.a2a.client)
 
     implementation(libs.tool.schema)
     implementation(ktorLibs.server.netty)
@@ -59,7 +58,7 @@ dependencies {
     implementation(libs.flyway.postgresql)
     testImplementation(ktorLibs.server.testHost)
     testImplementation(libs.kotlin.test.junit)
-    testImplementation("io.ktor:ktor-server-test-host-jvm:3.3.3")
+    testImplementation(libs.ktor.server.test.host.jvm)
 }
 
 ktor {

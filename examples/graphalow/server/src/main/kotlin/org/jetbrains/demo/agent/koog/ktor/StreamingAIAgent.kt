@@ -267,7 +267,7 @@ class StreamingAIAgent<Input, Output>(
         install(EventHandler) {
             onAgentStarting { ctx ->
                 send(
-                    Event.OnBeforeAgentStarted<Input, Output>(
+                    Event.OnBeforeAgentStarted(
                         ctx.agent as AIAgent<Input, Output>,
                         ctx.runId,
                         ctx.context
