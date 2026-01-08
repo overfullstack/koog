@@ -5,11 +5,6 @@ ktorServerWebsockets = "3.3.3"
 logback = "1.5.23"
 kotlinx-serialization = "1.9.0"
 kotlinx-coroutines = "1.10.2"
-androidx-datastore = "1.1.7"
-exposed = "1.0.0-rc-4"
-hikari = "7.0.2"
-postgresql = "42.7.7"
-flyway = "11.10.5"
 
 [libraries]
 a2a-client = { module = "ai.koog:a2a-client" }
@@ -28,18 +23,8 @@ logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 kotlinx-serialization-core = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kotlinx-serialization" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
-androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "androidx-datastore" }
-
-kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
-
-exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "exposed" }
-exposed-kotlin-datetime = { module = "org.jetbrains.exposed:exposed-kotlin-datetime", version.ref = "exposed" }
-hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
-postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
-flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
-
-tool-schema = { module = "com.xemantic.ai:xemantic-ai-tool-schema", version = "1.1.2" }
+tool-schema = { module = "com.xemantic.ai:xemantic-ai-tool-schema", version = "1.2.0" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
