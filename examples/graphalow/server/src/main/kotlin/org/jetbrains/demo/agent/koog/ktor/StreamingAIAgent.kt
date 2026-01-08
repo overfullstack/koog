@@ -11,8 +11,6 @@ import ai.koog.agents.core.agent.entity.AIAgentNodeBase
 import ai.koog.agents.core.feature.model.AIAgentError
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolRegistry
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.ktor.Koog
 import ai.koog.prompt.dsl.ModerationResult
@@ -28,7 +26,8 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.toDeprecatedClock
-import java.lang.IllegalStateException
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 import kotlin.time.Clock

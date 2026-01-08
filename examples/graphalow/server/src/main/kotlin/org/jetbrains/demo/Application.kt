@@ -64,6 +64,9 @@ fun Application.app(config: AppConfig) {
             anthropic(apiKey = System.getenv("ANTHROPIC_AUTH_TOKEN")) {
                 baseUrl = System.getenv("ANTHROPIC_BEDROCK_BASE_URL")
             }
+            google(apiKey = System.getenv("GEMINI_API_KEY")) {
+                baseUrl = System.getenv("LLM_GATEWAY_BASE_URL")
+            }
         }
     }
 

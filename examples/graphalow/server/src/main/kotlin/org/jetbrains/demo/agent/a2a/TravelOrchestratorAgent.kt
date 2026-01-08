@@ -38,18 +38,31 @@ class TravelOrchestratorAgent(
 
     @OptIn(ExperimentalUuidApi::class)
     suspend fun planTravel(journeyForm: JourneyForm): TravelPlanResult = coroutineScope {
-        logger.info("Starting A2A mesh travel planning orchestration")
+        logger.info(LogColors.orchestratorBanner("A2A ORCHESTRATION START"))
+        logger.info("${LogColors.ORCHESTRATOR} Journey: ${journeyForm.fromCity} -> ${journeyForm.toCity}")
+        logger.info("${LogColors.ORCHESTRATOR} Dates: ${journeyForm.startDate} to ${journeyForm.endDate}")
+        logger.info("${LogColors.ORCHESTRATOR} Travelers: ${journeyForm.travelers.joinToString { it.name }}")
+        logger.info("${LogColors.ORCHESTRATOR} Transport: ${journeyForm.transport}")
 
         // Step 1: Call Route Planner Agent to get itinerary ideas
-        logger.info("Step 1: Calling Route Planner Agent")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("[STEP 1/3]")} Calling Route Planner Agent at ${endpoints.routePlannerUrl}")
+        val routePlannerStart = System.currentTimeMillis()
         val itineraryIdeas = callRoutePlannerAgent(journeyForm)
-        logger.info("Route Planner returned ${itineraryIdeas.pointsOfInterest.size} points of interest")
+        val routePlannerDuration = System.currentTimeMillis() - routePlannerStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("[STEP 1/3]")} Route Planner completed in ${routePlannerDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("[STEP 1/3]")} Returned ${itineraryIdeas.pointsOfInterest.size} POIs:")
+        itineraryIdeas.pointsOfInterest.forEachIndexed { idx, poi ->
+            logger.info("${LogColors.ORCHESTRATOR}   POI ${idx + 1}: ${poi.name} @ ${poi.location}")
+        }
 
         // Step 2: Call POI Researcher Agent in parallel for each point of interest
-        logger.info("Step 2: Calling POI Researcher Agent for ${itineraryIdeas.pointsOfInterest.size} POIs in parallel")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Calling POI Researcher Agent for ${itineraryIdeas.pointsOfInterest.size} POIs in parallel")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} POI Researcher endpoint: ${endpoints.poiResearcherUrl}")
+        val poiResearcherStart = System.currentTimeMillis()
         val researchResults = itineraryIdeas.pointsOfInterest.map { poi ->
             async {
-                callPOIResearcherAgent(
+                logger.debug("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Starting research for: ${poi.name}")
+                val result = callPOIResearcherAgent(
                     POIResearchRequest(
                         pointOfInterest = poi,
                         travelers = journeyForm.travelers.joinToString { it.name },
@@ -57,18 +70,33 @@ class TravelOrchestratorAgent(
                         endDate = journeyForm.endDate.toString()
                     )
                 )
+                logger.debug("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Completed research for: ${poi.name}")
+                result
             }
         }.awaitAll()
-        logger.info("POI Researcher returned ${researchResults.size} research results")
+        val poiResearcherDuration = System.currentTimeMillis() - poiResearcherStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} POI Researcher completed in ${poiResearcherDuration}ms (parallel)")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Received ${researchResults.size} research results")
 
         // Step 3: Call Plan Composer Agent to create the final travel plan
-        logger.info("Step 3: Calling Plan Composer Agent")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/3]")} Calling Plan Composer Agent at ${endpoints.planComposerUrl}")
+        val planComposerStart = System.currentTimeMillis()
         val travelPlanRequest = TravelPlanRequest(
             journeyDetails = buildJourneyDetails(journeyForm),
             researchedPoints = researchResults
         )
         val travelPlan = callPlanComposerAgent(travelPlanRequest)
-        logger.info("Plan Composer returned travel plan: ${travelPlan.title}")
+        val planComposerDuration = System.currentTimeMillis() - planComposerStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/3]")} Plan Composer completed in ${planComposerDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/3]")} Plan title: ${travelPlan.title}")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/3]")} Plan has ${travelPlan.days.size} days")
+
+        val totalDuration = routePlannerDuration + poiResearcherDuration + planComposerDuration
+        logger.info(LogColors.orchestratorBanner("A2A ORCHESTRATION COMPLETE"))
+        logger.info("${LogColors.ORCHESTRATOR} Total orchestration time: ${totalDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.green("Route Planner")}: ${routePlannerDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.yellow("POI Researcher")}: ${poiResearcherDuration}ms (parallel)")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.blue("Plan Composer")}: ${planComposerDuration}ms")
 
         travelPlan
     }
