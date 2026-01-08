@@ -8,6 +8,7 @@ import ai.koog.agents.a2a.core.A2AMessage
 import ai.koog.agents.a2a.server.feature.A2AAgentServer
 import ai.koog.agents.a2a.server.feature.withA2AAgentServer
 import ai.koog.agents.core.agent.GraphAIAgent
+import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.tools.ToolRegistry
@@ -21,8 +22,11 @@ import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
 import org.jetbrains.demo.agent.a2a.model.ItineraryIdeasResult
 import org.jetbrains.demo.agent.tools.Tools
+import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi
+
+private val logger = LoggerFactory.getLogger("RoutePlannerAgent")
 
 const val ROUTE_PLANNER_PATH = "/a2a/route-planner"
 const val ROUTE_PLANNER_CARD_PATH = "$ROUTE_PLANNER_PATH/agent-card.json"
@@ -73,8 +77,20 @@ class RoutePlannerAgentExecutor(
         context: RequestContext<MessageSendParams>,
         eventProcessor: SessionEventProcessor
     ) {
-        val agent = routePlannerAgent(promptExecutor, tools, context, eventProcessor)
-        agent.run(context.params.message)
+        logger.info(LogColors.routePlannerBanner("ROUTE_PLANNER EXECUTION START"))
+        logger.info("${LogColors.ROUTE_PLANNER} TaskId: ${context.taskId}")
+        logger.info("${LogColors.ROUTE_PLANNER} ContextId: ${context.contextId}")
+        val startTime = System.currentTimeMillis()
+        try {
+            val agent = routePlannerAgent(promptExecutor, tools, context, eventProcessor)
+            agent.run(context.params.message)
+            val duration = System.currentTimeMillis() - startTime
+            logger.info("${LogColors.ROUTE_PLANNER} Execution completed in ${duration}ms")
+        } catch (e: Exception) {
+            logger.error("${LogColors.ROUTE_PLANNER} ${LogColors.red("Execution failed")}: ${e.message}", e)
+            throw e
+        }
+        logger.info(LogColors.routePlannerBanner("ROUTE_PLANNER EXECUTION END"))
     }
 }
 
@@ -124,6 +140,12 @@ private fun routePlannerAgent(
             this.context = context
             this.eventProcessor = eventProcessor
         }
+        if (A2ATelemetry.isEnabled) {
+            install(OpenTelemetry, A2ATelemetry.installLangfuse(
+                agentName = "route-planner",
+                sessionId = context.contextId
+            ))
+        }
     }
 }
 
@@ -132,12 +154,18 @@ private fun routePlannerStrategy() = strategy<A2AMessage, Unit>("route-planner-s
     val json = Json { ignoreUnknownKeys = true }
 
     val parseInput by node<A2AMessage, JourneyForm> { message ->
+        logger.debug("${LogColors.ROUTE_PLANNER} Parsing input message...")
         val textContent = message.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
-        json.decodeFromString<JourneyForm>(textContent)
+        val journeyForm = json.decodeFromString<JourneyForm>(textContent)
+        logger.info("${LogColors.ROUTE_PLANNER} Parsed journey: ${journeyForm.fromCity} -> ${journeyForm.toCity}")
+        journeyForm
     }
 
     val setupContextAndPlan by node<JourneyForm, ItineraryIdeasResult> { journeyForm ->
-        llm.writeSession {
+        logger.info("${LogColors.ROUTE_PLANNER} ${LogColors.LLM} Requesting itinerary ideas from LLM...")
+        logger.debug("${LogColors.ROUTE_PLANNER} ${LogColors.LLM} Journey details: ${journeyForm.fromCity} -> ${journeyForm.toCity}, ${journeyForm.startDate} to ${journeyForm.endDate}")
+        val llmStart = System.currentTimeMillis()
+        val result = llm.writeSession {
             appendPrompt {
                 user {
                     markdown {
@@ -158,9 +186,14 @@ private fun routePlannerStrategy() = strategy<A2AMessage, Unit>("route-planner-s
             }
             requestLLMStructured<ItineraryIdeasResult>().getOrThrow().data
         }
+        val llmDuration = System.currentTimeMillis() - llmStart
+        logger.info("${LogColors.ROUTE_PLANNER} ${LogColors.LLM} LLM response received in ${llmDuration}ms")
+        logger.info("${LogColors.ROUTE_PLANNER} ${LogColors.LLM} Generated ${result.pointsOfInterest.size} points of interest")
+        result
     }
 
     val sendResult by node<ItineraryIdeasResult, Unit> { itinerary ->
+        logger.info("${LogColors.ROUTE_PLANNER} Sending result artifact with ${itinerary.pointsOfInterest.size} POIs")
         withA2AAgentServer {
             val artifactUpdate = TaskArtifactUpdateEvent(
                 taskId = context.taskId,
@@ -173,6 +206,7 @@ private fun routePlannerStrategy() = strategy<A2AMessage, Unit>("route-planner-s
                 ),
             )
             eventProcessor.sendTaskEvent(artifactUpdate)
+            logger.debug("${LogColors.ROUTE_PLANNER} Artifact sent")
 
             val taskStatusUpdate = TaskStatusUpdateEvent(
                 taskId = context.taskId,
@@ -184,6 +218,7 @@ private fun routePlannerStrategy() = strategy<A2AMessage, Unit>("route-planner-s
                 final = true,
             )
             eventProcessor.sendTaskEvent(taskStatusUpdate)
+            logger.info("${LogColors.ROUTE_PLANNER} Task completed")
         }
     }
 

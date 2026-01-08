@@ -1,6 +1,18 @@
 package org.jetbrains.demo.agent.a2a
 
-import ai.koog.a2a.model.*
+import ai.koog.a2a.model.AgentCapabilities
+import ai.koog.a2a.model.AgentCard
+import ai.koog.a2a.model.AgentInterface
+import ai.koog.a2a.model.AgentSkill
+import ai.koog.a2a.model.Artifact
+import ai.koog.a2a.model.MessageSendParams
+import ai.koog.a2a.model.Task
+import ai.koog.a2a.model.TaskArtifactUpdateEvent
+import ai.koog.a2a.model.TaskState
+import ai.koog.a2a.model.TaskStatus
+import ai.koog.a2a.model.TaskStatusUpdateEvent
+import ai.koog.a2a.model.TextPart
+import ai.koog.a2a.model.TransportProtocol
 import ai.koog.a2a.server.agent.AgentExecutor
 import ai.koog.a2a.server.session.RequestContext
 import ai.koog.a2a.server.session.SessionEventProcessor
@@ -8,10 +20,9 @@ import ai.koog.agents.a2a.core.A2AMessage
 import ai.koog.agents.a2a.server.feature.A2AAgentServer
 import ai.koog.agents.a2a.server.feature.withA2AAgentServer
 import ai.koog.agents.core.agent.GraphAIAgent
+import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.core.agent.config.AIAgentConfig
-import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.prompt.dsl.prompt
@@ -22,9 +33,11 @@ import org.jetbrains.demo.LLM_MODEL
 import org.jetbrains.demo.agent.a2a.model.TravelPlanRequest
 import org.jetbrains.demo.agent.a2a.model.TravelPlanResult
 import org.jetbrains.demo.agent.tools.Tools
+import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi
 
+private val logger = LoggerFactory.getLogger("PlanComposerAgent")
 
 private const val IMAGE_WIDTH = 400
 private const val WORD_COUNT = 200
@@ -78,8 +91,20 @@ class PlanComposerAgentExecutor(
         context: RequestContext<MessageSendParams>,
         eventProcessor: SessionEventProcessor
     ) {
-        val agent = planComposerAgent(promptExecutor, tools, context, eventProcessor)
-        agent.run(context.params.message)
+        logger.info(LogColors.planComposerBanner("PLAN_COMPOSER EXECUTION START"))
+        logger.info("${LogColors.PLAN_COMPOSER} TaskId: ${context.taskId}")
+        logger.info("${LogColors.PLAN_COMPOSER} ContextId: ${context.contextId}")
+        val startTime = System.currentTimeMillis()
+        try {
+            val agent = planComposerAgent(promptExecutor, tools, context, eventProcessor)
+            agent.run(context.params.message)
+            val duration = System.currentTimeMillis() - startTime
+            logger.info("${LogColors.PLAN_COMPOSER} Execution completed in ${duration}ms")
+        } catch (e: Exception) {
+            logger.error("${LogColors.PLAN_COMPOSER} ${LogColors.red("Execution failed")}: ${e.message}", e)
+            throw e
+        }
+        logger.info(LogColors.planComposerBanner("PLAN_COMPOSER EXECUTION END"))
     }
 }
 
@@ -131,6 +156,12 @@ private fun planComposerAgent(
             this.context = context
             this.eventProcessor = eventProcessor
         }
+        if (A2ATelemetry.isEnabled) {
+            install(OpenTelemetry, A2ATelemetry.installLangfuse(
+                agentName = "plan-composer",
+                sessionId = context.contextId
+            ))
+        }
     }
 }
 
@@ -139,11 +170,15 @@ private fun planComposerStrategy() = strategy<A2AMessage, Unit>("plan-composer-s
     val json = Json { ignoreUnknownKeys = true }
 
     val parseInput by node<A2AMessage, TravelPlanRequest> { message ->
+        logger.debug("${LogColors.PLAN_COMPOSER} Parsing input message...")
         val textContent = message.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
-        json.decodeFromString<TravelPlanRequest>(textContent)
+        val request = json.decodeFromString<TravelPlanRequest>(textContent)
+        logger.info("${LogColors.PLAN_COMPOSER} Parsed request with ${request.researchedPoints.size} researched POIs")
+        request
     }
 
     val createTask by node<TravelPlanRequest, TravelPlanRequest> { input ->
+        logger.debug("${LogColors.PLAN_COMPOSER} Creating task...")
         withA2AAgentServer {
             val userInput = context.params.message
             val task = Task(
@@ -161,7 +196,11 @@ private fun planComposerStrategy() = strategy<A2AMessage, Unit>("plan-composer-s
     }
 
     val setupContextAndCompose by node<TravelPlanRequest, TravelPlanResult> { request ->
-        llm.writeSession {
+        logger.info("${LogColors.PLAN_COMPOSER} ${LogColors.LLM} Composing travel plan...")
+        logger.debug("${LogColors.PLAN_COMPOSER} ${LogColors.LLM} Journey details: ${request.journeyDetails.take(100)}...")
+        logger.debug("${LogColors.PLAN_COMPOSER} ${LogColors.LLM} Processing ${request.researchedPoints.size} researched POIs")
+        val llmStart = System.currentTimeMillis()
+        val result = llm.writeSession {
             appendPrompt {
                 user {
                     +"""
@@ -206,9 +245,15 @@ private fun planComposerStrategy() = strategy<A2AMessage, Unit>("plan-composer-s
             }
             requestLLMStructured<TravelPlanResult>().getOrThrow().data
         }
+        val llmDuration = System.currentTimeMillis() - llmStart
+        logger.info("${LogColors.PLAN_COMPOSER} ${LogColors.LLM} Plan composed in ${llmDuration}ms")
+        logger.info("${LogColors.PLAN_COMPOSER} ${LogColors.LLM} Plan title: ${result.title}")
+        logger.info("${LogColors.PLAN_COMPOSER} ${LogColors.LLM} Plan has ${result.days.size} days")
+        result
     }
 
     val sendResult by node<TravelPlanResult, Unit> { planResult ->
+        logger.info("${LogColors.PLAN_COMPOSER} Sending result artifact: ${planResult.title}")
         withA2AAgentServer {
             val artifactUpdate = TaskArtifactUpdateEvent(
                 taskId = context.taskId,
@@ -221,6 +266,7 @@ private fun planComposerStrategy() = strategy<A2AMessage, Unit>("plan-composer-s
                 ),
             )
             eventProcessor.sendTaskEvent(artifactUpdate)
+            logger.debug("${LogColors.PLAN_COMPOSER} Artifact sent")
 
             val taskStatusUpdate = TaskStatusUpdateEvent(
                 taskId = context.taskId,
@@ -232,6 +278,7 @@ private fun planComposerStrategy() = strategy<A2AMessage, Unit>("plan-composer-s
                 final = true,
             )
             eventProcessor.sendTaskEvent(taskStatusUpdate)
+            logger.info("${LogColors.PLAN_COMPOSER} Task completed")
         }
     }
 

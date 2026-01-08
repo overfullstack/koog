@@ -8,6 +8,7 @@ import ai.koog.agents.a2a.core.A2AMessage
 import ai.koog.agents.a2a.server.feature.A2AAgentServer
 import ai.koog.agents.a2a.server.feature.withA2AAgentServer
 import ai.koog.agents.core.agent.GraphAIAgent
+import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
@@ -23,9 +24,11 @@ import org.jetbrains.demo.LLM_MODEL
 import org.jetbrains.demo.agent.a2a.model.POIResearchRequest
 import org.jetbrains.demo.agent.a2a.model.POIResearchResult
 import org.jetbrains.demo.agent.tools.Tools
+import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi
 
+private val logger = LoggerFactory.getLogger("POIResearcherAgent")
 
 const val POI_RESEARCHER_PATH = "/a2a/poi-researcher"
 const val POI_RESEARCHER_CARD_PATH = "$POI_RESEARCHER_PATH/agent-card.json"
@@ -76,8 +79,20 @@ class POIResearcherAgentExecutor(
         context: RequestContext<MessageSendParams>,
         eventProcessor: SessionEventProcessor
     ) {
-        val agent = poiResearcherAgent(promptExecutor, tools, context, eventProcessor)
-        agent.run(context.params.message)
+        logger.info(LogColors.poiResearcherBanner("POI_RESEARCHER EXECUTION START"))
+        logger.info("${LogColors.POI_RESEARCHER} TaskId: ${context.taskId}")
+        logger.info("${LogColors.POI_RESEARCHER} ContextId: ${context.contextId}")
+        val startTime = System.currentTimeMillis()
+        try {
+            val agent = poiResearcherAgent(promptExecutor, tools, context, eventProcessor)
+            agent.run(context.params.message)
+            val duration = System.currentTimeMillis() - startTime
+            logger.info("${LogColors.POI_RESEARCHER} Execution completed in ${duration}ms")
+        } catch (e: Exception) {
+            logger.error("${LogColors.POI_RESEARCHER} ${LogColors.red("Execution failed")}: ${e.message}", e)
+            throw e
+        }
+        logger.info(LogColors.poiResearcherBanner("POI_RESEARCHER EXECUTION END"))
     }
 }
 
@@ -127,6 +142,12 @@ private fun poiResearcherAgent(
             this.context = context
             this.eventProcessor = eventProcessor
         }
+        if (A2ATelemetry.isEnabled) {
+            install(OpenTelemetry, A2ATelemetry.installLangfuse(
+                agentName = "poi-researcher",
+                sessionId = context.contextId
+            ))
+        }
     }
 }
 
@@ -135,11 +156,15 @@ private fun poiResearcherStrategy() = strategy<A2AMessage, Unit>("poi-researcher
     val json = Json { ignoreUnknownKeys = true }
 
     val parseInput by node<A2AMessage, POIResearchRequest> { message ->
+        logger.debug("${LogColors.POI_RESEARCHER} Parsing input message...")
         val textContent = message.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
-        json.decodeFromString<POIResearchRequest>(textContent)
+        val request = json.decodeFromString<POIResearchRequest>(textContent)
+        logger.info("${LogColors.POI_RESEARCHER} Parsed request for POI: ${request.pointOfInterest.name}")
+        request
     }
 
     val createTask by node<POIResearchRequest, POIResearchRequest> { input ->
+        logger.debug("${LogColors.POI_RESEARCHER} Creating task for POI: ${input.pointOfInterest.name}")
         withA2AAgentServer {
             val userInput = context.params.message
             val task = Task(
@@ -157,7 +182,10 @@ private fun poiResearcherStrategy() = strategy<A2AMessage, Unit>("poi-researcher
     }
 
     val setupContextAndResearch by node<POIResearchRequest, POIResearchResult> { request ->
-        llm.writeSession {
+        logger.info("${LogColors.POI_RESEARCHER} ${LogColors.LLM} Researching POI: ${request.pointOfInterest.name}")
+        logger.debug("${LogColors.POI_RESEARCHER} ${LogColors.LLM} Location: ${request.pointOfInterest.location}")
+        val llmStart = System.currentTimeMillis()
+        val result = llm.writeSession {
             appendPrompt {
                 user {
                     markdown {
@@ -178,9 +206,14 @@ private fun poiResearcherStrategy() = strategy<A2AMessage, Unit>("poi-researcher
             }
             requestLLMStructured<POIResearchResult>().getOrThrow().data
         }
+        val llmDuration = System.currentTimeMillis() - llmStart
+        logger.info("${LogColors.POI_RESEARCHER} ${LogColors.LLM} Research for ${request.pointOfInterest.name} completed in ${llmDuration}ms")
+        logger.debug("${LogColors.POI_RESEARCHER} ${LogColors.LLM} Found ${result.links.size} links, ${result.imageLinks.size} images")
+        result
     }
 
     val sendResult by node<POIResearchResult, Unit> { researchResult ->
+        logger.info("${LogColors.POI_RESEARCHER} Sending result artifact for POI: ${researchResult.pointOfInterest.name}")
         withA2AAgentServer {
             val artifactUpdate = TaskArtifactUpdateEvent(
                 taskId = context.taskId,
@@ -193,6 +226,7 @@ private fun poiResearcherStrategy() = strategy<A2AMessage, Unit>("poi-researcher
                 ),
             )
             eventProcessor.sendTaskEvent(artifactUpdate)
+            logger.debug("${LogColors.POI_RESEARCHER} Artifact sent")
 
             val taskStatusUpdate = TaskStatusUpdateEvent(
                 taskId = context.taskId,
@@ -204,6 +238,7 @@ private fun poiResearcherStrategy() = strategy<A2AMessage, Unit>("poi-researcher
                 final = true,
             )
             eventProcessor.sendTaskEvent(taskStatusUpdate)
+            logger.info("${LogColors.POI_RESEARCHER} Task completed for POI: ${researchResult.pointOfInterest.name}")
         }
     }
 

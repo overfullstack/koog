@@ -5,9 +5,12 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.agent.a2a.model.TravelPlanResult
+import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
+
+private val logger = LoggerFactory.getLogger("ChatService")
 
 @Serializable
 enum class MessageRole {
@@ -64,13 +67,20 @@ class ChatService(private val orchestrator: TravelOrchestratorAgent) {
         val sessionId = Uuid.random().toString()
         val session = ChatSession(sessionId = sessionId)
         sessions[sessionId] = session
+        logger.info("${LogColors.SESSION} Created new session: $sessionId")
         return session
     }
 
-    fun getSession(sessionId: String): ChatSession? = sessions[sessionId]
+    fun getSession(sessionId: String): ChatSession? {
+        val session = sessions[sessionId]
+        logger.debug("${LogColors.SESSION} Get session $sessionId: ${if (session != null) "found" else "not found"}")
+        return session
+    }
 
     fun getMessages(sessionId: String): List<ChatMessage> {
-        return sessions[sessionId]?.messages ?: emptyList()
+        val messages = sessions[sessionId]?.messages ?: emptyList()
+        logger.debug("${LogColors.SESSION} Get messages for $sessionId: ${messages.size} messages")
+        return messages
     }
 
     @OptIn(ExperimentalUuidApi::class)
@@ -98,6 +108,21 @@ class ChatService(private val orchestrator: TravelOrchestratorAgent) {
 
     @OptIn(ExperimentalUuidApi::class)
     fun chat(request: ChatRequest): Flow<ChatStreamEvent> = flow {
+        logger.info(LogColors.chatBanner("CHAT REQUEST"))
+        logger.info("${LogColors.CHAT} Session: ${request.sessionId ?: "new"}")
+        logger.info("${LogColors.USER_INPUT} Message: ${LogColors.userInput(request.message)}")
+        logger.info("${LogColors.CHAT} Has journey form: ${request.journeyForm != null}")
+        if (request.journeyForm != null) {
+            val jf = request.journeyForm
+            logger.info("${LogColors.USER_INPUT} Journey Details:")
+            logger.info("${LogColors.USER_INPUT}   From: ${LogColors.userInput(jf.fromCity)}")
+            logger.info("${LogColors.USER_INPUT}   To: ${LogColors.userInput(jf.toCity)}")
+            logger.info("${LogColors.USER_INPUT}   Dates: ${LogColors.userInput("${jf.startDate} to ${jf.endDate}")}")
+            logger.info("${LogColors.USER_INPUT}   Transport: ${LogColors.userInput(jf.transport.name)}")
+            logger.info("${LogColors.USER_INPUT}   Travelers: ${LogColors.userInput(jf.travelers.joinToString { it.name })}")
+            jf.details?.let { logger.info("${LogColors.USER_INPUT}   Notes: ${LogColors.userInput(it)}") }
+        }
+        
         val sessionId = request.sessionId ?: createSession().sessionId
         val session = sessions[sessionId] ?: createSession().also { sessions[it.sessionId] = it }
         
@@ -107,11 +132,13 @@ class ChatService(private val orchestrator: TravelOrchestratorAgent) {
 
         // Update journey form if provided
         if (request.journeyForm != null) {
+            logger.info("${LogColors.CHAT} Updating journey form for session $sessionId")
             updateJourneyForm(sessionId, request.journeyForm)
         }
 
         val currentSession = sessions[sessionId]!!
         val journeyForm = request.journeyForm ?: currentSession.journeyForm
+        logger.debug("${LogColors.CHAT} Journey form present: ${journeyForm != null}")
 
         // Determine response based on context
         when {
@@ -136,6 +163,8 @@ class ChatService(private val orchestrator: TravelOrchestratorAgent) {
                 it.contains("plan") || it.contains("start") || it.contains("yes") || it.contains("go") 
             } -> {
                 // User wants to start planning
+                logger.info("${LogColors.CHAT} User triggered planning flow")
+                logger.info("${LogColors.CHAT} Planning: ${journeyForm.fromCity} -> ${journeyForm.toCity}")
                 emit(ChatStreamEvent(sessionId = sessionId, type = "thinking", content = "Analyzing your travel requirements..."))
                 
                 val thinkingMessage = addMessage(
@@ -152,7 +181,12 @@ class ChatService(private val orchestrator: TravelOrchestratorAgent) {
                 
                 try {
                     // Call the A2A orchestrator
+                    logger.info("${LogColors.CHAT} Invoking ${LogColors.magenta("A2A orchestrator")}...")
+                    val planningStart = System.currentTimeMillis()
                     val travelPlan = orchestrator.planTravel(journeyForm)
+                    val planningDuration = System.currentTimeMillis() - planningStart
+                    logger.info("${LogColors.CHAT} A2A orchestrator completed in ${planningDuration}ms")
+                    logger.info("${LogColors.CHAT} Generated plan: ${travelPlan.title}")
                     
                     // Update session with result
                     sessions.computeIfPresent(sessionId) { _, s ->
@@ -195,6 +229,7 @@ class ChatService(private val orchestrator: TravelOrchestratorAgent) {
                     emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
                     
                 } catch (e: Exception) {
+                    logger.error("${LogColors.CHAT} ${LogColors.red("Error during planning")}: ${e.message}", e)
                     val errorMessage = addMessage(
                         sessionId,
                         MessageRole.ASSISTANT,

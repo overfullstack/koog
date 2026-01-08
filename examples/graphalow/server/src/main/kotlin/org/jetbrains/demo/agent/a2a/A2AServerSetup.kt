@@ -30,19 +30,30 @@ class A2AMeshServer(
     private val scope = CoroutineScope(Dispatchers.IO)
 
     fun start() {
-        logger.info("Starting A2A Mesh with base URL: ${config.baseUrl}")
+        logger.info(LogColors.serverBanner("A2A MESH SERVER STARTING"))
+        logger.info("${LogColors.SERVER} Base URL: ${config.baseUrl}")
+        logger.info("${LogColors.SERVER} Configured ports:")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.routePlannerPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.poiResearcherPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.planComposerPort}")
 
         scope.launch { startRoutePlannerServer() }
         scope.launch { startPOIResearcherServer() }
         scope.launch { startPlanComposerServer() }
 
-        logger.info("A2A Mesh servers started successfully")
-        logger.info("  - Route Planner: ${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_PATH")
-        logger.info("  - POI Researcher: ${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_PATH")
-        logger.info("  - Plan Composer: ${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_PATH")
+        logger.info(LogColors.serverBanner("A2A MESH SERVER STARTED"))
+        logger.info("${LogColors.SERVER} Endpoints available:")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_PATH")
+        logger.info("${LogColors.SERVER} Agent cards available at:")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_CARD_PATH")
     }
 
     private suspend fun startRoutePlannerServer() {
+        logger.info("${LogColors.ROUTE_PLANNER} Server initializing...")
         val agentCard = routePlannerAgentCard("${config.baseUrl}:${config.routePlannerPort}")
         val agentExecutor = RoutePlannerAgentExecutor(promptExecutor, tools)
         val a2aServer = A2AServer(
@@ -51,7 +62,7 @@ class A2AMeshServer(
         )
 
         val serverTransport = HttpJSONRPCServerTransport(a2aServer)
-        logger.info("Starting Route Planner Agent on port ${config.routePlannerPort}")
+        logger.info("${LogColors.ROUTE_PLANNER} Server starting on port ${config.routePlannerPort}")
 
         serverTransport.start(
             engineFactory = CIO,
@@ -61,9 +72,11 @@ class A2AMeshServer(
             agentCard = agentCard,
             agentCardPath = ROUTE_PLANNER_CARD_PATH
         )
+        logger.info("${LogColors.ROUTE_PLANNER} Server started successfully")
     }
 
     private suspend fun startPOIResearcherServer() {
+        logger.info("${LogColors.POI_RESEARCHER} Server initializing...")
         val agentCard = poiResearcherAgentCard("${config.baseUrl}:${config.poiResearcherPort}")
         val agentExecutor = POIResearcherAgentExecutor(promptExecutor, tools)
         val a2aServer = A2AServer(
@@ -72,7 +85,7 @@ class A2AMeshServer(
         )
 
         val serverTransport = HttpJSONRPCServerTransport(a2aServer)
-        logger.info("Starting POI Researcher Agent on port ${config.poiResearcherPort}")
+        logger.info("${LogColors.POI_RESEARCHER} Server starting on port ${config.poiResearcherPort}")
 
         serverTransport.start(
             engineFactory = CIO,
@@ -82,9 +95,11 @@ class A2AMeshServer(
             agentCard = agentCard,
             agentCardPath = POI_RESEARCHER_CARD_PATH
         )
+        logger.info("${LogColors.POI_RESEARCHER} Server started successfully")
     }
 
     private suspend fun startPlanComposerServer() {
+        logger.info("${LogColors.PLAN_COMPOSER} Server initializing...")
         val agentCard = planComposerAgentCard("${config.baseUrl}:${config.planComposerPort}")
         val agentExecutor = PlanComposerAgentExecutor(promptExecutor, tools)
         val a2aServer = A2AServer(
@@ -93,7 +108,7 @@ class A2AMeshServer(
         )
 
         val serverTransport = HttpJSONRPCServerTransport(a2aServer)
-        logger.info("Starting Plan Composer Agent on port ${config.planComposerPort}")
+        logger.info("${LogColors.PLAN_COMPOSER} Server starting on port ${config.planComposerPort}")
 
         serverTransport.start(
             engineFactory = CIO,
@@ -103,6 +118,7 @@ class A2AMeshServer(
             agentCard = agentCard,
             agentCardPath = PLAN_COMPOSER_CARD_PATH
         )
+        logger.info("${LogColors.PLAN_COMPOSER} Server started successfully")
     }
 
     fun getEndpoints(): A2AAgentEndpoints = A2AAgentEndpoints(

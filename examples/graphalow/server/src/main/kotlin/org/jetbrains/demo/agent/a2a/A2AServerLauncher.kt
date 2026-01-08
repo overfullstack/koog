@@ -19,6 +19,7 @@ import org.jetbrains.demo.agent.tools.Tools
 import org.jetbrains.demo.agent.tools.WeatherTool
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.mcp.McpToolRegistryProvider
+import ai.koog.prompt.executor.clients.google.GoogleClientSettings
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2AServerLauncher")
@@ -54,11 +55,10 @@ fun main() = runBlocking {
 private fun createPromptExecutor(): MultiLLMPromptExecutor {
     val openAIKey = System.getenv("LLM_GATEWAY_KEY") ?: System.getenv("OPENAI_API_KEY")
     val anthropicKey = System.getenv("ANTHROPIC_AUTH_TOKEN") ?: System.getenv("ANTHROPIC_API_KEY")
-    val googleKey = System.getenv("GOOGLE_API_KEY")
-
+    val googleKey = System.getenv("GEMINI_API_KEY")
+    val gatewayBaseUrl = System.getenv("LLM_GATEWAY_BASE_URL")
     val clients = buildList<Pair<LLMProvider, ai.koog.prompt.executor.clients.LLMClient>> {
         if (!openAIKey.isNullOrBlank()) {
-            val gatewayBaseUrl = System.getenv("LLM_GATEWAY_BASE_URL")
             val settings = if (gatewayBaseUrl != null) {
                 OpenAIClientSettings(baseUrl = gatewayBaseUrl)
             } else {
@@ -76,7 +76,7 @@ private fun createPromptExecutor(): MultiLLMPromptExecutor {
             add(LLMProvider.Anthropic to AnthropicLLMClient(apiKey = anthropicKey, settings = settings))
         }
         if (!googleKey.isNullOrBlank()) {
-            add(LLMProvider.Google to GoogleLLMClient(googleKey))
+            add(LLMProvider.Google to GoogleLLMClient(googleKey, GoogleClientSettings(baseUrl = gatewayBaseUrl)))
         }
     }
     

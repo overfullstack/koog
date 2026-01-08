@@ -42,6 +42,7 @@ dependencies {
     implementation(libs.a2a.transport.client.jsonrpc.http)
     implementation(libs.agents.features.a2a.server)
     implementation(libs.agents.features.a2a.client)
+    implementation(libs.agents.features.opentelemetry)
 
     implementation(libs.tool.schema)
     implementation(ktorLibs.server.netty)
