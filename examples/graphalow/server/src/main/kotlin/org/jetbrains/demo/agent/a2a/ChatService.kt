@@ -134,6 +134,8 @@ data class ChatSession(
     val partialJourney: PartialJourneyInfo? = null,
     val planResult: TravelPlanResult? = null,
     val conversationState: ConversationState = ConversationState.GREETING,
+    val interactivePlanningState: InteractivePlanningState? = null,
+    val pendingCheckpoint: InteractivePlanningEvent? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -153,7 +155,9 @@ data class ChatStreamEvent(
     val content: String? = null,
     val message: ChatMessage? = null,
     val done: Boolean = false,
-    val planResult: TravelPlanResult? = null
+    val planResult: TravelPlanResult? = null,
+    val interactiveEvent: InteractivePlanningEvent? = null,
+    val awaitingResponse: Boolean = false
 )
 
 class ChatService(
@@ -1144,6 +1148,389 @@ class ChatService(
         }
         
         emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+    }
+
+    /**
+     * Start interactive planning that pauses for user decisions.
+     * Emulates a real travel agent conversation.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private fun handleInteractivePlanningFlow(
+        sessionId: String,
+        userId: String?,
+        journeyForm: JourneyForm
+    ): Flow<ChatStreamEvent> = flow {
+        updateConversationState(sessionId, ConversationState.PLANNING)
+        logger.info("${LogColors.CHAT} Starting interactive planning for: ${journeyForm.fromCity} -> ${journeyForm.toCity}")
+        
+        // Personalized intro
+        val introContent = buildString {
+            appendLine("Great! Let's plan your trip to **${journeyForm.toCity}** together! 🗺️")
+            appendLine()
+            appendLine("I'll find some amazing places and let you choose which ones to include.")
+            if (userId != null) {
+                val interests = UserPreferenceStore.getTravelInterests(userId)
+                if (interests.isNotEmpty()) {
+                    appendLine("Based on your interests in ${interests.take(2).joinToString(" and ") { it.name.lowercase() }}, I'll prioritize relevant spots.")
+                }
+            }
+        }
+        val introMessage = addMessage(sessionId, MessageRole.ASSISTANT, introContent)
+        emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = introMessage))
+        
+        // Stream interactive events
+        orchestrator.startInteractivePlanning(journeyForm).collect { event ->
+            when (event) {
+                is InteractivePlanningEvent.StatusUpdate -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = event.message
+                    ))
+                }
+                
+                is InteractivePlanningEvent.SelectPOIs -> {
+                    // Format POI options as a nice message
+                    val poiMessage = buildString {
+                        appendLine("**I found ${event.availablePOIs.size} interesting places for your trip!**")
+                        appendLine()
+                        appendLine("Which ones would you like me to include? (Pick up to ${event.maxSelections})")
+                        appendLine()
+                        event.availablePOIs.forEachIndexed { idx, poi ->
+                            appendLine("${idx + 1}. **${poi.name}** - ${poi.description}")
+                            appendLine("   📍 ${poi.category} • ⏱️ ${poi.estimatedTime}")
+                            appendLine()
+                        }
+                        appendLine("---")
+                        appendLine("*Reply with the numbers you'd like (e.g., \"1, 3, 5\") or say \"all\" to include everything!*")
+                    }
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, poiMessage)
+                    
+                    // Store pending checkpoint in session
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingCheckpoint = event,
+                            interactivePlanningState = InteractivePlanningState(
+                                journeyForm = journeyForm,
+                                stage = PlanningStage.AWAITING_POI_SELECTION,
+                                pendingCheckpointId = event.checkpointId
+                            ),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "interactive_checkpoint",
+                        message = msg,
+                        interactiveEvent = event,
+                        awaitingResponse = true
+                    ))
+                }
+                
+                is InteractivePlanningEvent.ChoosePace -> {
+                    val paceMessage = buildString {
+                        appendLine("**How would you like your days to feel?**")
+                        appendLine()
+                        event.options.forEach { option ->
+                            appendLine("• **${option.name}**: ${option.description}")
+                        }
+                        appendLine()
+                        appendLine("*Just tell me: relaxed, moderate, or packed!*")
+                    }
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, paceMessage)
+                    
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingCheckpoint = event,
+                            interactivePlanningState = s.interactivePlanningState?.copy(
+                                stage = PlanningStage.AWAITING_PREFERENCES,
+                                pendingCheckpointId = event.checkpointId
+                            ),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "interactive_checkpoint",
+                        message = msg,
+                        interactiveEvent = event,
+                        awaitingResponse = true
+                    ))
+                }
+                
+                is InteractivePlanningEvent.ConfirmDiscovery -> {
+                    val discoveryMessage = buildString {
+                        appendLine("💡 **Interesting find about ${event.poiName}:**")
+                        appendLine()
+                        appendLine("> ${event.discovery}")
+                        appendLine()
+                        appendLine("*${event.recommendation}*")
+                    }
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, discoveryMessage, MessageType.THINKING)
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = msg))
+                }
+                
+                is InteractivePlanningEvent.ChoosePreference -> {
+                    val prefMessage = buildString {
+                        appendLine("**${event.question}**")
+                        appendLine()
+                        event.options.forEach { option ->
+                            appendLine("• **${option.label}**: ${option.description}")
+                        }
+                    }
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, prefMessage)
+                    
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingCheckpoint = event,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "interactive_checkpoint",
+                        message = msg,
+                        interactiveEvent = event,
+                        awaitingResponse = true
+                    ))
+                }
+                
+                is InteractivePlanningEvent.Complete -> {
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            planResult = event.plan,
+                            conversationState = ConversationState.PRESENTING_PLAN,
+                            interactivePlanningState = null,
+                            pendingCheckpoint = null,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    userId?.let {
+                        UserPreferenceStore.addPastTrip(it, PastTrip(
+                            fromCity = journeyForm.fromCity,
+                            toCity = journeyForm.toCity,
+                            date = journeyForm.startDate.toString()
+                        ))
+                        UserPreferenceStore.addFavoriteDestination(it, journeyForm.toCity)
+                    }
+                    
+                    val planSummary = buildString {
+                        appendLine(event.summary)
+                        appendLine()
+                        appendLine("# ${event.plan.title}")
+                        appendLine()
+                        appendLine(event.plan.plan)
+                        appendLine()
+                        appendLine("---")
+                        appendLine("*Would you like me to adjust anything? Just let me know!*")
+                    }
+                    
+                    val resultMessage = addMessage(sessionId, MessageRole.ASSISTANT, planSummary, MessageType.PLAN_RESULT)
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "plan_result",
+                        message = resultMessage,
+                        planResult = event.plan
+                    ))
+                }
+                
+                is InteractivePlanningEvent.Failed -> {
+                    updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "I ran into an issue: ${event.error}\n\nWould you like me to try again?",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+            }
+        }
+        
+        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+    }
+    
+    /**
+     * Handle user response to an interactive planning checkpoint.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    fun handlePlanningResponse(
+        sessionId: String,
+        userMessage: String
+    ): Flow<ChatStreamEvent> = flow {
+        val session = sessions[sessionId] ?: run {
+            emit(ChatStreamEvent(sessionId = sessionId, type = "error", content = "Session not found"))
+            return@flow
+        }
+        
+        val planningState = session.interactivePlanningState ?: run {
+            emit(ChatStreamEvent(sessionId = sessionId, type = "error", content = "No active planning session"))
+            return@flow
+        }
+        
+        val checkpoint = session.pendingCheckpoint ?: run {
+            emit(ChatStreamEvent(sessionId = sessionId, type = "error", content = "No pending checkpoint"))
+            return@flow
+        }
+        
+        // Parse user response based on checkpoint type
+        val response = when (checkpoint) {
+            is InteractivePlanningEvent.SelectPOIs -> {
+                val selectedIds = parseUserPOISelection(userMessage, checkpoint.availablePOIs)
+                UserPlanningResponse(
+                    checkpointId = checkpoint.checkpointId,
+                    selectedPOIs = selectedIds
+                )
+            }
+            is InteractivePlanningEvent.ChoosePace -> {
+                val pace = parseUserPaceChoice(userMessage)
+                UserPlanningResponse(
+                    checkpointId = checkpoint.checkpointId,
+                    selectedPace = pace
+                )
+            }
+            is InteractivePlanningEvent.ChoosePreference -> {
+                val option = parseUserPreferenceChoice(userMessage, checkpoint.options)
+                UserPlanningResponse(
+                    checkpointId = checkpoint.checkpointId,
+                    selectedOption = option
+                )
+            }
+            is InteractivePlanningEvent.ConfirmDiscovery -> {
+                val confirmed = userMessage.lowercase().let { 
+                    it.contains("yes") || it.contains("include") || it.contains("sounds good")
+                }
+                UserPlanningResponse(
+                    checkpointId = checkpoint.checkpointId,
+                    confirmed = confirmed
+                )
+            }
+            else -> UserPlanningResponse(checkpointId = checkpoint.checkpointId)
+        }
+        
+        // Acknowledge the response
+        val ackMessage = when (checkpoint) {
+            is InteractivePlanningEvent.SelectPOIs -> {
+                val count = response.selectedPOIs?.size ?: 0
+                "Great choices! You selected $count places. Let me research them for you..."
+            }
+            is InteractivePlanningEvent.ChoosePace -> {
+                "Perfect! A **${response.selectedPace}** pace it is!"
+            }
+            else -> "Got it!"
+        }
+        val ack = addMessage(sessionId, MessageRole.ASSISTANT, ackMessage, MessageType.THINKING)
+        emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = ack))
+        
+        // Continue planning with user's response
+        orchestrator.continueInteractivePlanning(planningState, response).collect { event ->
+            // Reuse the same event handling logic
+            when (event) {
+                is InteractivePlanningEvent.StatusUpdate -> {
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "progress", content = event.message))
+                }
+                is InteractivePlanningEvent.Complete -> {
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            planResult = event.plan,
+                            conversationState = ConversationState.PRESENTING_PLAN,
+                            interactivePlanningState = null,
+                            pendingCheckpoint = null,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val planSummary = buildString {
+                        appendLine(event.summary)
+                        appendLine()
+                        appendLine("# ${event.plan.title}")
+                        appendLine()
+                        appendLine(event.plan.plan)
+                    }
+                    val resultMessage = addMessage(sessionId, MessageRole.ASSISTANT, planSummary, MessageType.PLAN_RESULT)
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "plan_result",
+                        message = resultMessage,
+                        planResult = event.plan
+                    ))
+                }
+                is InteractivePlanningEvent.ChoosePace -> {
+                    val paceMessage = buildString {
+                        appendLine("**One more question - how would you like your days to feel?**")
+                        appendLine()
+                        event.options.forEach { option ->
+                            appendLine("• **${option.name}**: ${option.description}")
+                        }
+                    }
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, paceMessage)
+                    
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingCheckpoint = event,
+                            interactivePlanningState = s.interactivePlanningState?.copy(
+                                stage = PlanningStage.AWAITING_PREFERENCES,
+                                pendingCheckpointId = event.checkpointId
+                            ),
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "interactive_checkpoint",
+                        message = msg,
+                        interactiveEvent = event,
+                        awaitingResponse = true
+                    ))
+                }
+                is InteractivePlanningEvent.ConfirmDiscovery -> {
+                    val discoveryMessage = "💡 **${event.poiName}**: ${event.discovery}"
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, discoveryMessage, MessageType.THINKING)
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = msg))
+                }
+                is InteractivePlanningEvent.Failed -> {
+                    val errorMessage = addMessage(sessionId, MessageRole.ASSISTANT, "Error: ${event.error}", MessageType.ERROR)
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+                else -> {}
+            }
+        }
+        
+        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+    }
+    
+    private fun parseUserPOISelection(message: String, availablePOIs: List<POIOption>): List<String> {
+        val msgLower = message.lowercase()
+        
+        // "all" selects everything
+        if (msgLower.contains("all") || msgLower.contains("everything")) {
+            return availablePOIs.map { it.id }
+        }
+        
+        // Parse numbers like "1, 3, 5" or "1 3 5"
+        val numbers = Regex("\\d+").findAll(message).map { it.value.toInt() }.toList()
+        return numbers.filter { it in 1..availablePOIs.size }.map { "poi_${it - 1}" }
+    }
+    
+    private fun parseUserPaceChoice(message: String): String {
+        val msgLower = message.lowercase()
+        return when {
+            msgLower.contains("relax") || msgLower.contains("slow") || msgLower.contains("easy") -> "relaxed"
+            msgLower.contains("pack") || msgLower.contains("busy") || msgLower.contains("full") -> "packed"
+            else -> "moderate"
+        }
+    }
+    
+    private fun parseUserPreferenceChoice(message: String, options: List<PreferenceOption>): String? {
+        val msgLower = message.lowercase()
+        return options.firstOrNull { option ->
+            msgLower.contains(option.id.lowercase()) || msgLower.contains(option.label.lowercase())
+        }?.id
     }
 
     fun cleanupOldSessions(maxAgeMs: Long = 3600000) {
