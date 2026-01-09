@@ -989,34 +989,115 @@ class ChatService(
         logger.info("${LogColors.CHAT} User triggered planning flow")
         logger.info("${LogColors.CHAT} Planning: ${journeyForm.fromCity} -> ${journeyForm.toCity}")
         
-        emit(ChatStreamEvent(sessionId = sessionId, type = "thinking", content = "Analyzing your travel requirements..."))
-        
-        // Personalized thinking message
-        val thinkingContent = buildString {
-            append("Let me plan your trip from **${journeyForm.fromCity}** to **${journeyForm.toCity}**")
+        // Personalized intro message
+        val introContent = buildString {
+            append("Great! Let me plan your trip from **${journeyForm.fromCity}** to **${journeyForm.toCity}**")
             if (userId != null) {
                 val interests = UserPreferenceStore.getTravelInterests(userId)
                 if (interests.isNotEmpty()) {
                     append(", focusing on ${interests.take(2).joinToString(" and ") { it.name.lowercase() }}")
                 }
             }
-            append("...")
+            appendLine(".")
+            appendLine()
+            appendLine("I'll keep you updated as I work through the planning steps...")
         }
         
-        val thinkingMessage = addMessage(sessionId, MessageRole.ASSISTANT, thinkingContent, MessageType.THINKING)
-        emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = thinkingMessage))
-
-        emit(ChatStreamEvent(sessionId = sessionId, type = "tool_use", content = "🗺️ Calling Route Planner Agent..."))
-        emit(ChatStreamEvent(sessionId = sessionId, type = "thinking", content = "Finding points of interest along your route..."))
+        val introMessage = addMessage(sessionId, MessageRole.ASSISTANT, introContent, MessageType.THINKING)
+        emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = introMessage))
         
-        try {
-            logger.info("${LogColors.CHAT} Invoking ${LogColors.magenta("A2A orchestrator")}...")
-            val planningStart = System.currentTimeMillis()
-            val travelPlan = orchestrator.planTravel(journeyForm)
-            val planningDuration = System.currentTimeMillis() - planningStart
-            logger.info("${LogColors.CHAT} A2A orchestrator completed in ${planningDuration}ms")
-            logger.info("${LogColors.CHAT} Generated plan: ${travelPlan.title}")
-            
+        var finalPlan: TravelPlanResult? = null
+        
+        // Stream progress updates from orchestrator
+        orchestrator.planTravelWithProgress(journeyForm).collect { progress ->
+            when (progress) {
+                is PlanningProgress.Started -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "🚀 Starting trip planning..."
+                    ))
+                }
+                
+                is PlanningProgress.RoutePlannerStarted -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "🗺️ Finding the best route and points of interest..."
+                    ))
+                }
+                
+                is PlanningProgress.RoutePlannerComplete -> {
+                    val poiList = progress.pointsOfInterest.take(5).joinToString(", ")
+                    val moreText = if (progress.pointsOfInterest.size > 5) 
+                        " and ${progress.pointsOfInterest.size - 5} more" else ""
+                    
+                    val routeMessage = buildString {
+                        appendLine("**Found ${progress.pointsOfInterest.size} interesting places!**")
+                        appendLine()
+                        appendLine("Including: $poiList$moreText")
+                        appendLine()
+                        appendLine("Now researching each location for you...")
+                    }
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, routeMessage, MessageType.THINKING)
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = msg))
+                }
+                
+                is PlanningProgress.ResearchingPOI -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "🔍 Researching **${progress.poiName}** (${progress.index}/${progress.total})..."
+                    ))
+                }
+                
+                is PlanningProgress.POIResearchComplete -> {
+                    if (progress.highlights.isNotEmpty()) {
+                        val highlightText = progress.highlights.take(2).joinToString("; ")
+                        emit(ChatStreamEvent(
+                            sessionId = sessionId, 
+                            type = "progress", 
+                            content = "✅ **${progress.poiName}**: $highlightText"
+                        ))
+                    }
+                }
+                
+                is PlanningProgress.AllResearchComplete -> {
+                    val researchSummary = "📚 Research complete! Gathered insights on ${progress.totalPOIs} locations."
+                    val msg = addMessage(sessionId, MessageRole.ASSISTANT, researchSummary, MessageType.THINKING)
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = msg))
+                }
+                
+                is PlanningProgress.ComposingPlan -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "📝 Putting together your personalized travel plan..."
+                    ))
+                }
+                
+                is PlanningProgress.PlanComplete -> {
+                    finalPlan = progress.plan
+                    logger.info("${LogColors.CHAT} Plan complete in ${progress.totalDurationMs}ms")
+                }
+                
+                is PlanningProgress.Error -> {
+                    logger.error("${LogColors.CHAT} Planning error: ${progress.message}")
+                    updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
+                    
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "I encountered an issue: ${progress.message}\n\nWould you like me to try again?",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+            }
+        }
+        
+        // Handle final plan
+        finalPlan?.let { travelPlan ->
             // Update session with result
             sessions.computeIfPresent(sessionId) { _, s ->
                 s.copy(
@@ -1033,15 +1114,8 @@ class ChatService(
                     toCity = journeyForm.toCity,
                     date = journeyForm.startDate.toString()
                 ))
-                // Remember destination as favorite if they planned a trip there
                 UserPreferenceStore.addFavoriteDestination(it, journeyForm.toCity)
             }
-
-            emit(ChatStreamEvent(sessionId = sessionId, type = "tool_result", content = "✅ Route planning complete"))
-            emit(ChatStreamEvent(sessionId = sessionId, type = "tool_use", content = "🔍 Researching points of interest..."))
-            emit(ChatStreamEvent(sessionId = sessionId, type = "tool_result", content = "✅ Research complete"))
-            emit(ChatStreamEvent(sessionId = sessionId, type = "tool_use", content = "📝 Composing your travel plan..."))
-            emit(ChatStreamEvent(sessionId = sessionId, type = "tool_result", content = "✅ Plan composed"))
 
             val planSummary = buildString {
                 appendLine("# ${travelPlan.title}")
@@ -1067,22 +1141,9 @@ class ChatService(
                 message = resultMessage,
                 planResult = travelPlan
             ))
-            emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
-            
-        } catch (e: Exception) {
-            logger.error("${LogColors.CHAT} ${LogColors.red("Error during planning")}: ${e.message}", e)
-            updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
-            
-            val errorMessage = addMessage(
-                sessionId,
-                MessageRole.ASSISTANT,
-                "I encountered an error while planning: ${e.message}\n\n" +
-                "Would you like me to try again? Just say **\"yes\"** or let me know if you'd like to adjust any details first.",
-                MessageType.ERROR
-            )
-            emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage, content = e.message))
-            emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
         }
+        
+        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
     }
 
     fun cleanupOldSessions(maxAgeMs: Long = 3600000) {
