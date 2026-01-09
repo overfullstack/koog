@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.JourneyForm
+import org.jetbrains.demo.PointOfInterest
 import org.jetbrains.demo.agent.a2a.model.ItineraryIdeasResult
 import org.jetbrains.demo.agent.a2a.model.POIResearchRequest
 import org.jetbrains.demo.agent.a2a.model.POIResearchResult
@@ -72,6 +73,137 @@ sealed class PlanningProgress {
     @Serializable
     data class Error(val message: String) : PlanningProgress()
 }
+
+/**
+ * Interactive planning events that pause for user decisions.
+ * Emulates a real travel agent asking questions and waiting for responses.
+ */
+@Serializable
+sealed class InteractivePlanningEvent {
+    /** Checkpoint ID for correlating user responses */
+    abstract val checkpointId: String
+    
+    /** Ask user to select which POIs they want to include */
+    @Serializable
+    data class SelectPOIs(
+        override val checkpointId: String,
+        val availablePOIs: List<POIOption>,
+        val maxSelections: Int = 5
+    ) : InteractivePlanningEvent()
+    
+    /** Ask user about trip pacing preference */
+    @Serializable
+    data class ChoosePace(
+        override val checkpointId: String,
+        val options: List<PaceOption> = listOf(
+            PaceOption("relaxed", "Relaxed", "2-3 activities per day, plenty of free time"),
+            PaceOption("moderate", "Moderate", "4-5 activities per day, balanced schedule"),
+            PaceOption("packed", "Packed", "6+ activities per day, see everything!")
+        )
+    ) : InteractivePlanningEvent()
+    
+    /** Share a discovery and ask if user wants to include it */
+    @Serializable
+    data class ConfirmDiscovery(
+        override val checkpointId: String,
+        val poiName: String,
+        val discovery: String,
+        val recommendation: String
+    ) : InteractivePlanningEvent()
+    
+    /** Ask user to choose between options (e.g., restaurant styles) */
+    @Serializable
+    data class ChoosePreference(
+        override val checkpointId: String,
+        val question: String,
+        val options: List<PreferenceOption>
+    ) : InteractivePlanningEvent()
+    
+    /** Informational update (no response needed) */
+    @Serializable
+    data class StatusUpdate(
+        override val checkpointId: String = "",
+        val message: String,
+        val stage: PlanningStage
+    ) : InteractivePlanningEvent()
+    
+    /** Planning complete */
+    @Serializable
+    data class Complete(
+        override val checkpointId: String = "",
+        val plan: TravelPlanResult,
+        val summary: String
+    ) : InteractivePlanningEvent()
+    
+    /** Error during planning */
+    @Serializable
+    data class Failed(
+        override val checkpointId: String = "",
+        val error: String
+    ) : InteractivePlanningEvent()
+}
+
+@Serializable
+data class POIOption(
+    val id: String,
+    val name: String,
+    val description: String,
+    val category: String,
+    val estimatedTime: String = "2-3 hours"
+)
+
+@Serializable
+data class PaceOption(
+    val id: String,
+    val name: String,
+    val description: String
+)
+
+@Serializable
+data class PreferenceOption(
+    val id: String,
+    val label: String,
+    val description: String
+)
+
+@Serializable
+enum class PlanningStage {
+    STARTING,
+    FINDING_PLACES,
+    AWAITING_POI_SELECTION,
+    RESEARCHING,
+    AWAITING_PREFERENCES,
+    COMPOSING,
+    COMPLETE
+}
+
+/**
+ * User's response to an interactive checkpoint.
+ */
+@Serializable
+data class UserPlanningResponse(
+    val checkpointId: String,
+    val selectedPOIs: List<String>? = null,
+    val selectedPace: String? = null,
+    val confirmed: Boolean? = null,
+    val selectedOption: String? = null,
+    val freeformInput: String? = null
+)
+
+/**
+ * State for an interactive planning session that can be paused/resumed.
+ */
+@Serializable
+data class InteractivePlanningState(
+    val journeyForm: JourneyForm,
+    val stage: PlanningStage = PlanningStage.STARTING,
+    val discoveredPOIs: List<PointOfInterest> = emptyList(),
+    val selectedPOIIds: List<String> = emptyList(),
+    val researchedPOIs: List<POIResearchResult> = emptyList(),
+    val selectedPace: String = "moderate",
+    val preferences: Map<String, String> = emptyMap(),
+    val pendingCheckpointId: String? = null
+)
 
 data class A2AAgentEndpoints(
     val routePlannerUrl: String,
@@ -223,6 +355,151 @@ class TravelOrchestratorAgent(
         } catch (e: Exception) {
             logger.error("${LogColors.ORCHESTRATOR} Error during planning: ${e.message}", e)
             emit(PlanningProgress.Error(e.message ?: "Unknown error during planning"))
+        }
+    }
+    
+    /**
+     * Interactive planning that pauses at checkpoints for user decisions.
+     * This emulates a real travel agent conversation where the user guides choices.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    fun startInteractivePlanning(journeyForm: JourneyForm): Flow<InteractivePlanningEvent> = flow {
+        val sessionId = Uuid.random().toString()
+        logger.info(LogColors.orchestratorBanner("INTERACTIVE PLANNING START"))
+        
+        emit(InteractivePlanningEvent.StatusUpdate(
+            message = "Let me find some amazing places for your trip to ${journeyForm.toCity}...",
+            stage = PlanningStage.FINDING_PLACES
+        ))
+        
+        try {
+            // Step 1: Find POIs
+            val itineraryIdeas = callRoutePlannerAgent(journeyForm)
+            val poiOptions = itineraryIdeas.pointsOfInterest.mapIndexed { idx, poi ->
+                POIOption(
+                    id = "poi_$idx",
+                    name = poi.name,
+                    description = poi.description,
+                    category = "attraction",
+                    estimatedTime = "2-3 hours"
+                )
+            }
+            
+            // Checkpoint 1: Let user select POIs
+            emit(InteractivePlanningEvent.SelectPOIs(
+                checkpointId = "${sessionId}_select_pois",
+                availablePOIs = poiOptions,
+                maxSelections = minOf(5, poiOptions.size)
+            ))
+            
+        } catch (e: Exception) {
+            logger.error("${LogColors.ORCHESTRATOR} Interactive planning error: ${e.message}", e)
+            emit(InteractivePlanningEvent.Failed(error = e.message ?: "Planning failed"))
+        }
+    }
+    
+    /**
+     * Continue interactive planning after user responds to a checkpoint.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    fun continueInteractivePlanning(
+        state: InteractivePlanningState,
+        response: UserPlanningResponse
+    ): Flow<InteractivePlanningEvent> = flow {
+        logger.info("${LogColors.ORCHESTRATOR} Continuing planning from stage: ${state.stage}")
+        
+        try {
+            when (state.stage) {
+                PlanningStage.AWAITING_POI_SELECTION -> {
+                    val selectedPOIs = response.selectedPOIs ?: emptyList()
+                    val poisToResearch = state.discoveredPOIs.filterIndexed { idx, _ -> 
+                        "poi_$idx" in selectedPOIs 
+                    }
+                    
+                    emit(InteractivePlanningEvent.StatusUpdate(
+                        message = "Great choices! I'll research ${poisToResearch.size} places for you...",
+                        stage = PlanningStage.RESEARCHING
+                    ))
+                    
+                    // Research selected POIs
+                    val researchResults = mutableListOf<POIResearchResult>()
+                    poisToResearch.forEachIndexed { idx, poi ->
+                        emit(InteractivePlanningEvent.StatusUpdate(
+                            message = "🔍 Researching **${poi.name}** (${idx + 1}/${poisToResearch.size})...",
+                            stage = PlanningStage.RESEARCHING
+                        ))
+                        
+                        val result = callPOIResearcherAgent(
+                            POIResearchRequest(
+                                pointOfInterest = poi,
+                                travelers = state.journeyForm.travelers.joinToString { it.name },
+                                startDate = state.journeyForm.startDate.toString(),
+                                endDate = state.journeyForm.endDate.toString()
+                            )
+                        )
+                        researchResults.add(result)
+                        
+                        // Share interesting finding
+                        val highlight = result.research.split(". ").firstOrNull { it.length in 20..150 }
+                        if (highlight != null) {
+                            emit(InteractivePlanningEvent.ConfirmDiscovery(
+                                checkpointId = "${response.checkpointId}_discovery_$idx",
+                                poiName = poi.name,
+                                discovery = highlight,
+                                recommendation = "This looks like a great fit for your trip!"
+                            ))
+                        }
+                    }
+                    
+                    // Checkpoint 2: Ask about pace preference
+                    emit(InteractivePlanningEvent.ChoosePace(
+                        checkpointId = "${response.checkpointId}_pace"
+                    ))
+                }
+                
+                PlanningStage.AWAITING_PREFERENCES -> {
+                    val pace = response.selectedPace ?: "moderate"
+                    
+                    emit(InteractivePlanningEvent.StatusUpdate(
+                        message = "Perfect! Creating a **$pace** itinerary just for you...",
+                        stage = PlanningStage.COMPOSING
+                    ))
+                    
+                    // Add pace context to journey details
+                    val paceDescription = when (pace) {
+                        "relaxed" -> "Keep the schedule relaxed with 2-3 activities per day and plenty of downtime."
+                        "packed" -> "Pack in as many activities as possible - they want to see everything!"
+                        else -> "Balance activities with some free time for spontaneous exploration."
+                    }
+                    
+                    val enhancedDetails = buildJourneyDetails(state.journeyForm) + "\n\nPace preference: $paceDescription"
+                    
+                    val travelPlanRequest = TravelPlanRequest(
+                        journeyDetails = enhancedDetails,
+                        researchedPoints = state.researchedPOIs
+                    )
+                    val travelPlan = callPlanComposerAgent(travelPlanRequest)
+                    
+                    val summary = buildString {
+                        appendLine("I've created your personalized $pace itinerary!")
+                        appendLine("• ${travelPlan.days.size} days of adventure")
+                        appendLine("• ${state.researchedPOIs.size} hand-picked locations")
+                        appendLine("• Tailored to your preferences")
+                    }
+                    
+                    emit(InteractivePlanningEvent.Complete(
+                        plan = travelPlan,
+                        summary = summary
+                    ))
+                }
+                
+                else -> {
+                    emit(InteractivePlanningEvent.Failed(error = "Unexpected planning stage: ${state.stage}"))
+                }
+            }
+        } catch (e: Exception) {
+            logger.error("${LogColors.ORCHESTRATOR} Error continuing planning: ${e.message}", e)
+            emit(InteractivePlanningEvent.Failed(error = e.message ?: "Planning failed"))
         }
     }
 

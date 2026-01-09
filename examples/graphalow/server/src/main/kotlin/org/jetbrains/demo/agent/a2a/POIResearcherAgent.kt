@@ -1,6 +1,18 @@
 package org.jetbrains.demo.agent.a2a
 
-import ai.koog.a2a.model.*
+import ai.koog.a2a.model.AgentCapabilities
+import ai.koog.a2a.model.AgentCard
+import ai.koog.a2a.model.AgentInterface
+import ai.koog.a2a.model.AgentSkill
+import ai.koog.a2a.model.Artifact
+import ai.koog.a2a.model.MessageSendParams
+import ai.koog.a2a.model.Task
+import ai.koog.a2a.model.TaskArtifactUpdateEvent
+import ai.koog.a2a.model.TaskState
+import ai.koog.a2a.model.TaskStatus
+import ai.koog.a2a.model.TaskStatusUpdateEvent
+import ai.koog.a2a.model.TextPart
+import ai.koog.a2a.model.TransportProtocol
 import ai.koog.a2a.server.agent.AgentExecutor
 import ai.koog.a2a.server.session.RequestContext
 import ai.koog.a2a.server.session.SessionEventProcessor
@@ -8,13 +20,11 @@ import ai.koog.agents.a2a.core.A2AMessage
 import ai.koog.agents.a2a.server.feature.A2AAgentServer
 import ai.koog.agents.a2a.server.feature.withA2AAgentServer
 import ai.koog.agents.core.agent.GraphAIAgent
-import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.core.agent.config.AIAgentConfig
-import ai.koog.agents.core.dsl.builder.forwardTo
 import ai.koog.agents.core.dsl.builder.strategy
-import ai.koog.agents.core.dsl.extension.nodeLLMRequestStructured
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tools
+import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.markdown.markdown
