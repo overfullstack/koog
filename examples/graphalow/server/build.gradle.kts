@@ -43,6 +43,7 @@ dependencies {
     implementation(libs.agents.features.a2a.server)
     implementation(libs.agents.features.a2a.client)
     implementation(libs.agents.features.opentelemetry)
+    implementation(libs.agents.features.memory)
 
     implementation(libs.tool.schema)
     implementation(ktorLibs.server.netty)

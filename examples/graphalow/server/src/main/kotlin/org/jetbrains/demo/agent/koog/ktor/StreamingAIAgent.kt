@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.toDeprecatedClock
+import kotlinx.datetime.Clock as KotlinxClock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlin.reflect.KType
@@ -259,7 +259,7 @@ class StreamingAIAgent<Input, Output>(
         strategy = strategy,
         toolRegistry = toolRegistry,
         id = id,
-        clock = clock.toDeprecatedClock()
+        clock = KotlinxClock.System
     ) {
         installFeatures()
         @Suppress("UNCHECKED_CAST")

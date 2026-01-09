@@ -12,6 +12,7 @@ a2a-server = { module = "ai.koog:a2a-server" }
 agents-features-a2a-client = { module = "ai.koog:agents-features-a2a-client" }
 agents-features-a2a-server = { module = "ai.koog:agents-features-a2a-server" }
 agents-features-opentelemetry = { module = "ai.koog:agents-features-opentelemetry" }
+agents-features-memory = { module = "ai.koog:agents-features-memory" }
 a2a-transport-client-jsonrpc-http = { module = "ai.koog:a2a-transport-client-jsonrpc-http" }
 a2a-transport-server-jsonrpc-http = { module = "ai.koog:a2a-transport-server-jsonrpc-http" }
 koog-agents = { module = "ai.koog:koog-agents" }

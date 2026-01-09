@@ -36,7 +36,6 @@ data class AppConfig(
     val langfuseSecretKey: String,
     val weatherApiUrl: String,
     val tavilyApiKey: String,
-    val database: DatabaseConfig,
     val a2aEnabled: Boolean = false,
     val a2aBaseUrl: String = "http://localhost",
 )
@@ -99,7 +98,13 @@ private fun Application.a2aMesh(config: AppConfig) {
     a2aTravelAgentRoutes(orchestrator)
     
     // Chat UI endpoints (Claude-like experience)
-    val chatService = ChatService(orchestrator)
+    val koogPlugin = pluginOrNull(ai.koog.ktor.Koog)
+    val chatService = if (koogPlugin != null) {
+        @Suppress("invisible_reference", "invisible_member")
+        ChatService(orchestrator, koogPlugin.promptExecutor)
+    } else {
+        throw IllegalStateException("Koog plugin must be installed before a2aMesh")
+    }
     chatRoutes(chatService)
     
     log.info("A2A Mesh mode enabled. Use /a2a/plan endpoint for A2A-based travel planning.")
