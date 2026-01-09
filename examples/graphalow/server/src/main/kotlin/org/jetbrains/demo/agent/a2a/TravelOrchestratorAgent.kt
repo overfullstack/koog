@@ -8,7 +8,10 @@ import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.agent.a2a.model.ItineraryIdeasResult
@@ -21,6 +24,54 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 private val logger = LoggerFactory.getLogger("TravelOrchestratorAgent")
+
+/**
+ * Progress events emitted during travel planning to keep user in the loop.
+ */
+@Serializable
+sealed class PlanningProgress {
+    /** Planning has started */
+    @Serializable
+    data class Started(val fromCity: String, val toCity: String) : PlanningProgress()
+    
+    /** Route planner is finding points of interest */
+    @Serializable
+    data object RoutePlannerStarted : PlanningProgress()
+    
+    /** Route planner found POIs - share them with user for feedback */
+    @Serializable
+    data class RoutePlannerComplete(
+        val pointsOfInterest: List<String>,
+        val durationMs: Long
+    ) : PlanningProgress()
+    
+    /** Researching a specific POI */
+    @Serializable
+    data class ResearchingPOI(val poiName: String, val index: Int, val total: Int) : PlanningProgress()
+    
+    /** POI research complete for one item */
+    @Serializable
+    data class POIResearchComplete(
+        val poiName: String, 
+        val highlights: List<String>
+    ) : PlanningProgress()
+    
+    /** All POI research complete */
+    @Serializable
+    data class AllResearchComplete(val totalPOIs: Int, val durationMs: Long) : PlanningProgress()
+    
+    /** Composing the final plan */
+    @Serializable
+    data object ComposingPlan : PlanningProgress()
+    
+    /** Final plan is ready */
+    @Serializable
+    data class PlanComplete(val plan: TravelPlanResult, val totalDurationMs: Long) : PlanningProgress()
+    
+    /** Error occurred */
+    @Serializable
+    data class Error(val message: String) : PlanningProgress()
+}
 
 data class A2AAgentEndpoints(
     val routePlannerUrl: String,
@@ -99,6 +150,80 @@ class TravelOrchestratorAgent(
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.blue("Plan Composer")}: ${planComposerDuration}ms")
 
         travelPlan
+    }
+    
+    /**
+     * Stream-based travel planning that emits progress updates to keep user informed.
+     * This allows the UI to show real-time progress instead of waiting for the final result.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    fun planTravelWithProgress(journeyForm: JourneyForm): Flow<PlanningProgress> = flow {
+        val overallStart = System.currentTimeMillis()
+        
+        emit(PlanningProgress.Started(journeyForm.fromCity, journeyForm.toCity))
+        logger.info(LogColors.orchestratorBanner("A2A ORCHESTRATION START (Streaming)"))
+        
+        try {
+            // Step 1: Route Planner
+            emit(PlanningProgress.RoutePlannerStarted)
+            val routePlannerStart = System.currentTimeMillis()
+            val itineraryIdeas = callRoutePlannerAgent(journeyForm)
+            val routePlannerDuration = System.currentTimeMillis() - routePlannerStart
+            
+            val poiNames = itineraryIdeas.pointsOfInterest.map { it.name }
+            emit(PlanningProgress.RoutePlannerComplete(poiNames, routePlannerDuration))
+            logger.info("${LogColors.ORCHESTRATOR} Found ${poiNames.size} POIs: ${poiNames.joinToString()}")
+            
+            // Step 2: POI Research - emit progress for each POI
+            val poiResearcherStart = System.currentTimeMillis()
+            val totalPOIs = itineraryIdeas.pointsOfInterest.size
+            
+            val researchResults = mutableListOf<POIResearchResult>()
+            itineraryIdeas.pointsOfInterest.forEachIndexed { index, poi ->
+                emit(PlanningProgress.ResearchingPOI(poi.name, index + 1, totalPOIs))
+                
+                val result = callPOIResearcherAgent(
+                    POIResearchRequest(
+                        pointOfInterest = poi,
+                        travelers = journeyForm.travelers.joinToString { it.name },
+                        startDate = journeyForm.startDate.toString(),
+                        endDate = journeyForm.endDate.toString()
+                    )
+                )
+                researchResults.add(result)
+                
+                // Extract a brief highlight from the research text
+                val highlights = result.research.split(". ")
+                    .take(2)
+                    .map { it.trim() }
+                    .filter { it.length in 10..100 }
+                emit(PlanningProgress.POIResearchComplete(poi.name, highlights))
+            }
+            
+            val poiResearcherDuration = System.currentTimeMillis() - poiResearcherStart
+            emit(PlanningProgress.AllResearchComplete(totalPOIs, poiResearcherDuration))
+            
+            // Step 3: Compose final plan
+            emit(PlanningProgress.ComposingPlan)
+            val planComposerStart = System.currentTimeMillis()
+            val travelPlanRequest = TravelPlanRequest(
+                journeyDetails = buildJourneyDetails(journeyForm),
+                researchedPoints = researchResults
+            )
+            val travelPlan = callPlanComposerAgent(travelPlanRequest)
+            val planComposerDuration = System.currentTimeMillis() - planComposerStart
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/3]")} Plan Composer completed in ${planComposerDuration}ms")
+            
+            val totalDuration = System.currentTimeMillis() - overallStart
+            emit(PlanningProgress.PlanComplete(travelPlan, totalDuration))
+            
+            logger.info(LogColors.orchestratorBanner("A2A ORCHESTRATION COMPLETE (Streaming)"))
+            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Route: ${routePlannerDuration}ms, POI: ${poiResearcherDuration}ms, Compose: ${planComposerDuration}ms)")
+            
+        } catch (e: Exception) {
+            logger.error("${LogColors.ORCHESTRATOR} Error during planning: ${e.message}", e)
+            emit(PlanningProgress.Error(e.message ?: "Unknown error during planning"))
+        }
     }
 
     @OptIn(ExperimentalUuidApi::class)
