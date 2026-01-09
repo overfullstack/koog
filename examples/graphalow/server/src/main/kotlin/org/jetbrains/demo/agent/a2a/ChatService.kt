@@ -351,6 +351,14 @@ class ChatService(
                 updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
                 emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = assistantMessage))
                 emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+
+                val assistantMessage2 = addMessage(
+                    sessionId,
+                    MessageRole.ASSISTANT,
+                    "Hello!"
+                )
+                emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = assistantMessage2))
+
             }
             
             // User wants to update preferences

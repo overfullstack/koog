@@ -14,13 +14,14 @@ import io.ktor.server.websocket.pingPeriod
 import io.ktor.server.websocket.timeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.jetbrains.demo.agent.a2a.A2AAgentEndpoints
+import org.jetbrains.demo.agent.a2a.A2ASchedulerEndpoints
 import org.jetbrains.demo.agent.a2a.A2AConfig
 import org.jetbrains.demo.agent.a2a.ChatService
-import org.jetbrains.demo.agent.a2a.TravelOrchestratorAgent
-import org.jetbrains.demo.agent.a2a.a2aTravelAgentRoutes
+import org.jetbrains.demo.agent.a2a.SchedulerOrchestratorAgent
+import org.jetbrains.demo.agent.a2a.a2aSchedulerRoutes
 import org.jetbrains.demo.agent.a2a.chatRoutes
-import org.jetbrains.demo.agent.chat.agent
+import org.jetbrains.demo.agent.a2a.LOCATION_WEATHER_PATH
+import org.jetbrains.demo.agent.a2a.APPOINTMENT_BOOKING_PATH
 import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
@@ -80,7 +81,6 @@ fun Application.app(config: AppConfig) {
     }
 
     configure()
-    agent(config)
     
     // A2A Mesh mode (optional - can run alongside traditional agent)
     if (config.a2aEnabled) {
@@ -91,21 +91,19 @@ fun Application.app(config: AppConfig) {
 private fun Application.a2aMesh(config: AppConfig) {
     val a2aConfig = A2AConfig(
         baseUrl = config.a2aBaseUrl,
-        routePlannerPort = 9101,
-        poiResearcherPort = 9102,
-        planComposerPort = 9103
+        locationWeatherPort = 9101,
+        appointmentBookingPort = 9102
     )
 
     // Create the orchestrator that connects to the A2A agent servers
     // The A2A agent servers must be started separately (see A2AServerLauncher.kt)
-    val orchestrator = TravelOrchestratorAgent(
-        A2AAgentEndpoints(
-            routePlannerUrl = "${config.a2aBaseUrl}:${a2aConfig.routePlannerPort}/a2a/route-planner",
-            poiResearcherUrl = "${config.a2aBaseUrl}:${a2aConfig.poiResearcherPort}/a2a/poi-researcher",
-            planComposerUrl = "${config.a2aBaseUrl}:${a2aConfig.planComposerPort}/a2a/plan-composer"
+    val orchestrator = SchedulerOrchestratorAgent(
+        A2ASchedulerEndpoints(
+            locationWeatherUrl = "${config.a2aBaseUrl}:${a2aConfig.locationWeatherPort}$LOCATION_WEATHER_PATH",
+            appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
         )
     )
-    a2aTravelAgentRoutes(orchestrator)
+    a2aSchedulerRoutes(orchestrator)
     
     // Chat UI endpoints (Claude-like experience)
     val koogPlugin = pluginOrNull(ai.koog.ktor.Koog)
@@ -117,7 +115,7 @@ private fun Application.a2aMesh(config: AppConfig) {
     }
     chatRoutes(chatService)
     
-    log.info("A2A Mesh mode enabled. Use /a2a/plan endpoint for A2A-based travel planning.")
+    log.info("A2A Scheduler mode enabled. Use /chat endpoints for appointment booking.")
     log.info("Chat UI endpoints available at /chat/* (SSE: /chat/stream, WebSocket: /chat/ws)")
 }
 

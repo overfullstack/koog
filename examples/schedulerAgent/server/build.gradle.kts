@@ -73,7 +73,7 @@ ktor {
         imageTag = project.version.toString()
         externalRegistry =
             googleContainerRegistry(
-                projectName = provider { "Droidcon Bangladesh" },
+                projectName = provider { "Scheduler Agent" },
                 appName = providers.environmentVariable("GCLOUD_APPNAME"),
                 username = providers.environmentVariable("GCLOUD_USERNAME"),
                 password = providers.environmentVariable("GCLOUD_REGISTRY_PASSWORD"),
@@ -81,6 +81,6 @@ ktor {
     }
     fatJar {
         allowZip64 = true
-        archiveFileName.set("dc-bangladesh.jar")
+        archiveFileName.set("scheduler-agent.jar")
     }
 }
