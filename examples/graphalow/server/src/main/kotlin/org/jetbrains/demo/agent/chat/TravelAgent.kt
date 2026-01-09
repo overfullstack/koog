@@ -5,26 +5,54 @@ import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.features.opentelemetry.integration.langfuse.addLangfuseExporter
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.markdown.markdown
-import ai.koog.prompt.message.Message
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.request.*
-import io.ktor.server.routing.*
-import io.ktor.server.sse.*
+import io.ktor.http.HttpMethod
+import io.ktor.server.application.Application
+import io.ktor.server.request.receive
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.application
+import io.ktor.server.routing.route
+import io.ktor.server.routing.routing
+import io.ktor.server.sse.ServerSSESession
+import io.ktor.server.sse.sse
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.catch
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.AgentEvent
-import org.jetbrains.demo.AgentEvent.*
+import org.jetbrains.demo.AgentEvent.AgentError
+import org.jetbrains.demo.AgentEvent.AgentFinished
+import org.jetbrains.demo.AgentEvent.AgentStarted
+import org.jetbrains.demo.AgentEvent.Message
+import org.jetbrains.demo.AgentEvent.Step1
+import org.jetbrains.demo.AgentEvent.Step2
 import org.jetbrains.demo.AgentEvent.Tool
 import org.jetbrains.demo.AppConfig
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.agent.chat.strategy.*
+import org.jetbrains.demo.agent.chat.strategy.ItineraryIdeas
+import org.jetbrains.demo.agent.chat.strategy.ItineraryIdeasProvider
+import org.jetbrains.demo.agent.chat.strategy.ProposedTravelPlan
+import org.jetbrains.demo.agent.chat.strategy.ProposedTravelPlanProvider
+import org.jetbrains.demo.agent.chat.strategy.ResearchedPointOfInterest
+import org.jetbrains.demo.agent.chat.strategy.ResearchedPointOfInterestProvider
+import org.jetbrains.demo.agent.chat.strategy.planner
 import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.*
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.Agent
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAfterLLMCall
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAfterNode
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAgentFinished
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAgentRunError
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnBeforeAgentStarted
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnBeforeLLMCall
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnBeforeNode
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnNodeExecutionError
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnStrategyFinished
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnStrategyStarted
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolCall
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolCallFailure
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolCallResult
+import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolValidationError
 import org.jetbrains.demo.agent.koog.ktor.sseAgent
 import org.jetbrains.demo.agent.koog.ktor.withMaxAgentIterations
 import org.jetbrains.demo.agent.koog.ktor.withSystemPrompt
@@ -34,7 +62,7 @@ import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.concurrent.atomics.update
 import kotlin.concurrent.atomics.updateAndFetch
-import kotlin.time.Clock
+import ai.koog.prompt.message.Message as PromptMessage
 
 private val logger = LoggerFactory.getLogger("TravelAgent")
 
@@ -67,7 +95,7 @@ fun Application.agent(config: AppConfig) {
                     it.withSystemPrompt(prompt("travel-assistant-agent") {
                         system(markdown {
                             "Today's date is ${
-                                Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                                kotlinx.datetime.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
                             }."
                             +"You're an expert travel assistant helping users reach their destination in a reliable way."
                             header(1, "Task description:")
@@ -177,22 +205,23 @@ private fun StreamingAIAgent.Event<JourneyForm, ProposedTravelPlan>.toDomainEven
             logger.info("${ANSI_GREEN}Response types: ${responses.map { it::class.simpleName }}$ANSI_RESET")
             responses.forEach { response ->
                 when (response) {
-                    is Message.Tool.Call -> {
+                    is PromptMessage.Tool.Call -> {
                         logger.info("${ANSI_GREEN}Tool called: ${response.tool} (id: ${response.id})$ANSI_RESET")
                         logger.info("${ANSI_GREEN}Tool args: ${response.content}$ANSI_RESET")
                     }
-                    is Message.Assistant -> {
+                    is PromptMessage.Assistant -> {
                         logger.info("${ANSI_GREEN}Assistant: ${response.content}$ANSI_RESET")
                     }
-                    is Message.Reasoning -> {
+                    is PromptMessage.Reasoning -> {
                         logger.info("${ANSI_GREEN}Reasoning: ${response.content}$ANSI_RESET")
                     }
+                    else -> { /* ignore other message types */ }
                 }
             }
             logger.info("${ANSI_GREEN}Input tokens: ${inputTokens.load()}, output tokens: ${outputTokens.load()}, total tokens: ${totalTokens.load()}$ANSI_RESET")
             logger.info("${ANSI_GREEN}========================$ANSI_RESET")
 
-            val assistantContents = responses.filterIsInstance<Message.Assistant>().map { it.content }
+            val assistantContents = responses.filterIsInstance<PromptMessage.Assistant>().map { it.content }
             if (assistantContents.isNotEmpty()) Message(assistantContents)
             else null
         }
