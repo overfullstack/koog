@@ -76,3 +76,19 @@ data class AppointmentResult(
     val appointment: AppointmentForm
 )
 
+@Serializable
+data class AppointmentValidationRequest(
+    @property:LLMDescription("The work type group ID to validate")
+    val workTypeGroupId: String,
+    @property:LLMDescription("The appointment type to validate")
+    val appointmentType: String
+)
+
+@Serializable
+data class AppointmentValidationResult(
+    @property:LLMDescription("Whether the work type group and appointment type combination is valid")
+    val isValid: Boolean,
+    @property:LLMDescription("Validation message explaining the result")
+    val message: String
+)
+

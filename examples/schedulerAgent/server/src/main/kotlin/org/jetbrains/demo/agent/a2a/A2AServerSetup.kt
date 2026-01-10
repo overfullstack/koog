@@ -18,6 +18,7 @@ private val logger = LoggerFactory.getLogger("A2AServerSetup")
 data class A2AConfig(
     val baseUrl: String,
     val locationWeatherPort: Int = 9101,
+    val appointmentValidationPort: Int = 9103,
     val appointmentBookingPort: Int = 9102
 )
 
@@ -33,17 +34,21 @@ class A2AMeshServer(
         logger.info("${LogColors.SERVER} Base URL: ${config.baseUrl}")
         logger.info("${LogColors.SERVER} Configured ports:")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.locationWeatherPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.appointmentValidationPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.appointmentBookingPort}")
 
         scope.launch { startLocationWeatherServer() }
+        scope.launch { startAppointmentValidationServer() }
         scope.launch { startAppointmentBookingServer() }
 
         logger.info(LogColors.serverBanner("A2A SCHEDULER SERVER STARTED"))
         logger.info("${LogColors.SERVER} Endpoints available:")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.baseUrl}:${config.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH")
         logger.info("${LogColors.SERVER} Agent cards available at:")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.baseUrl}:${config.appointmentValidationPort}$APPOINTMENT_VALIDATION_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_CARD_PATH")
     }
 
@@ -68,6 +73,29 @@ class A2AMeshServer(
             agentCardPath = LOCATION_WEATHER_CARD_PATH
         )
         logger.info("${LogColors.LOCATION_WEATHER} Server started successfully")
+    }
+
+    private suspend fun startAppointmentValidationServer() {
+        logger.info("${LogColors.VALIDATION} Server initializing...")
+        val agentCard = appointmentValidationAgentCard("${config.baseUrl}:${config.appointmentValidationPort}")
+        val agentExecutor = AppointmentValidationAgentExecutor(promptExecutor)
+        val a2aServer = A2AServer(
+            agentExecutor = agentExecutor,
+            agentCard = agentCard,
+        )
+
+        val serverTransport = HttpJSONRPCServerTransport(a2aServer)
+        logger.info("${LogColors.VALIDATION} Server starting on port ${config.appointmentValidationPort}")
+
+        serverTransport.start(
+            engineFactory = CIO,
+            port = config.appointmentValidationPort,
+            path = APPOINTMENT_VALIDATION_PATH,
+            wait = false,
+            agentCard = agentCard,
+            agentCardPath = APPOINTMENT_VALIDATION_CARD_PATH
+        )
+        logger.info("${LogColors.VALIDATION} Server started successfully")
     }
 
     private suspend fun startAppointmentBookingServer() {
@@ -95,6 +123,7 @@ class A2AMeshServer(
 
     fun getEndpoints(): A2ASchedulerEndpoints = A2ASchedulerEndpoints(
         locationWeatherUrl = "${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH",
+        appointmentValidationUrl = "${config.baseUrl}:${config.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH",
         appointmentBookingUrl = "${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
     )
 }

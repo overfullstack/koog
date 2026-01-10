@@ -26,10 +26,11 @@ dependencyResolutionManagement {
         }
         maven("https://packages.jetbrains.team/maven/p/grazi/grazie-platform-public") {
             mavenContent {
-                includeGroup("ai.koog")
+                includeGroupAndSubgroups("ai.koog")
             }
         }
         mavenCentral()
+        mavenLocal()
     }
 }
 

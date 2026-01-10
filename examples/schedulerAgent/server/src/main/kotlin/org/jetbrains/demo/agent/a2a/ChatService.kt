@@ -692,6 +692,22 @@ class ChatService(
                     ))
                 }
                 
+                is AppointmentProgress.ValidatingAppointment -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "✅ Validating appointment type and work type group..."
+                    ))
+                }
+                
+                is AppointmentProgress.ValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "✅ Validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
                 is AppointmentProgress.CheckingLocationWeather -> {
                     emit(ChatStreamEvent(
                         sessionId = sessionId, 

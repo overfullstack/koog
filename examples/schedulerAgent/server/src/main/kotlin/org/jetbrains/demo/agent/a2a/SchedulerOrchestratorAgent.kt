@@ -36,6 +36,17 @@ sealed class AppointmentProgress {
         val durationMs: Long
     ) : AppointmentProgress()
     
+    /** Validating appointment */
+    @kotlinx.serialization.Serializable
+    data object ValidatingAppointment : AppointmentProgress()
+    
+    /** Validation complete */
+    @kotlinx.serialization.Serializable
+    data class ValidationComplete(
+        val validationResult: AppointmentValidationResult,
+        val durationMs: Long
+    ) : AppointmentProgress()
+    
     /** Booking appointment */
     @kotlinx.serialization.Serializable
     data object BookingAppointment : AppointmentProgress()
@@ -54,6 +65,7 @@ sealed class AppointmentProgress {
 
 data class A2ASchedulerEndpoints(
     val locationWeatherUrl: String,
+    val appointmentValidationUrl: String,
     val appointmentBookingUrl: String
 )
 
@@ -72,7 +84,7 @@ class SchedulerOrchestratorAgent(
         logger.info("${LogColors.ORCHESTRATOR} Time: ${appointmentForm.appointmentTime}")
 
         // Step 1: Call Location Weather Agent
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/2]")} Calling Location Weather Agent at ${endpoints.locationWeatherUrl}")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/3]")} Calling Location Weather Agent at ${endpoints.locationWeatherUrl}")
         val locationWeatherStart = System.currentTimeMillis()
         val weatherRequest = LocationWeatherRequest(
             location = appointmentForm.location,
@@ -80,10 +92,29 @@ class SchedulerOrchestratorAgent(
         )
         val weatherInfo = callLocationWeatherAgent(weatherRequest)
         val locationWeatherDuration = System.currentTimeMillis() - locationWeatherStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/2]")} Location Weather completed in ${locationWeatherDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/3]")} Location Weather completed in ${locationWeatherDuration}ms")
 
-        // Step 2: Call Appointment Booking Agent
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 2/2]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
+        // Step 2: Validate Appointment
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Validating Appointment at ${endpoints.appointmentValidationUrl}")
+        val validationStart = System.currentTimeMillis()
+        val appointmentTypeName = appointmentForm.appointmentGroup.name.replace("_", " ")
+        val validationRequest = AppointmentValidationRequest(
+            workTypeGroupId = appointmentForm.appointmentGroup.name,
+            appointmentType = appointmentTypeName
+        )
+        val validationResult = callAppointmentValidationAgent(validationRequest)
+        val validationDuration = System.currentTimeMillis() - validationStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Appointment Validation completed in ${validationDuration}ms")
+        
+        if (!validationResult.isValid) {
+            val errorMessage = "Appointment validation failed: ${validationResult.message}"
+            logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
+            throw IllegalStateException(errorMessage)
+        }
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Validation passed")}: ${validationResult.message}")
+
+        // Step 3: Call Appointment Booking Agent
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 3/3]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
         val bookingStart = System.currentTimeMillis()
         val bookingRequest = AppointmentBookingRequest(
             appointmentForm = appointmentForm,
@@ -91,12 +122,13 @@ class SchedulerOrchestratorAgent(
         )
         val bookingResult = callAppointmentBookingAgent(bookingRequest)
         val bookingDuration = System.currentTimeMillis() - bookingStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 2/2]")} Appointment Booking completed in ${bookingDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 3/3]")} Appointment Booking completed in ${bookingDuration}ms")
 
-        val totalDuration = locationWeatherDuration + bookingDuration
+        val totalDuration = locationWeatherDuration + validationDuration + bookingDuration
         logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE"))
         logger.info("${LogColors.ORCHESTRATOR} Total orchestration time: ${totalDuration}ms")
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.cyan("Location Weather")}: ${locationWeatherDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.yellow("Validation")}: ${validationDuration}ms")
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.magenta("Appointment Booking")}: ${bookingDuration}ms")
 
         return AppointmentResult(
@@ -133,7 +165,27 @@ class SchedulerOrchestratorAgent(
             emit(AppointmentProgress.LocationWeatherComplete(weatherInfo, locationWeatherDuration))
             logger.info("${LogColors.ORCHESTRATOR} Weather check complete: ${weatherInfo.weather}")
             
-            // Step 2: Book appointment
+            // Step 2: Validate appointment
+            emit(AppointmentProgress.ValidatingAppointment)
+            val validationStart = System.currentTimeMillis()
+            val appointmentTypeName = appointmentForm.appointmentGroup.name.replace("_", " ")
+            val validationRequest = AppointmentValidationRequest(
+                workTypeGroupId = appointmentForm.appointmentGroup.name,
+                appointmentType = appointmentTypeName
+            )
+            val validationResult = callAppointmentValidationAgent(validationRequest)
+            val validationDuration = System.currentTimeMillis() - validationStart
+            emit(AppointmentProgress.ValidationComplete(validationResult, validationDuration))
+            
+            if (!validationResult.isValid) {
+                val errorMessage = "Appointment validation failed: ${validationResult.message}"
+                logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
+                emit(AppointmentProgress.Error(errorMessage))
+                return@flow
+            }
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Validation passed")}: ${validationResult.message}")
+            
+            // Step 3: Book appointment
             emit(AppointmentProgress.BookingAppointment)
             val bookingStart = System.currentTimeMillis()
             val bookingRequest = AppointmentBookingRequest(
@@ -153,7 +205,7 @@ class SchedulerOrchestratorAgent(
             emit(AppointmentProgress.BookingComplete(finalResult, totalDuration))
             
             logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE (Streaming)"))
-            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Weather: ${locationWeatherDuration}ms, Booking: ${bookingDuration}ms)")
+            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Weather: ${locationWeatherDuration}ms, Validation: ${validationDuration}ms, Booking: ${bookingDuration}ms)")
             
         } catch (e: Exception) {
             logger.error("${LogColors.ORCHESTRATOR} Error during booking: ${e.message}", e)
@@ -184,6 +236,34 @@ class SchedulerOrchestratorAgent(
 
             val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
             return extractArtifact(responses, "location-weather")
+        } finally {
+            transport.close()
+        }
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun callAppointmentValidationAgent(request: AppointmentValidationRequest): AppointmentValidationResult {
+        val transport = HttpJSONRPCClientTransport(url = endpoints.appointmentValidationUrl)
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = endpoints.appointmentValidationUrl.substringBefore(APPOINTMENT_VALIDATION_PATH),
+            path = APPOINTMENT_VALIDATION_CARD_PATH
+        )
+        val client = A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+
+        try {
+            client.connect()
+            val contextId = Uuid.random().toString()
+
+            val message = Message(
+                messageId = Uuid.random().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(json.encodeToString(AppointmentValidationRequest.serializer(), request))),
+                contextId = contextId,
+                taskId = null
+            )
+
+            val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
+            return extractArtifact(responses, "appointment-validation")
         } finally {
             transport.close()
         }

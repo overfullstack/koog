@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
     alias(ktorLibs.plugins.ktor)
+    id("dev.zacsweers.moshix") version "0.34.1"
+    id("com.github.node-gradle.node") version "7.1.0"
 }
 
 application {
@@ -44,6 +46,59 @@ dependencies {
     implementation(libs.agents.features.a2a.client)
     implementation(libs.agents.features.opentelemetry)
     implementation(libs.agents.features.memory)
+    
+    // ReVoman for Postman collection execution
+    implementation(fileTree(mapOf("dir" to "jar", "include" to listOf("*.jar"))))
+    
+    // Vavr for Either type support (used by ReVoman) - using same versions as graphalow
+    api("io.vavr:vavr:0.11.0") // Updated to match graphalow
+    api("io.vavr:vavr-kotlin:0.10.2")
+    
+    // Arrow for Either type support (used by ReVoman) - using same versions as graphalow
+    api("io.arrow-kt:arrow-core:2.2.1.1")
+    
+    // MoshiX adapters (required by ReVoman) - using api like graphalow example
+    api("dev.zacsweers.moshix:moshi-adapters:0.34.1")
+    
+    // http4k for ReVoman (required for ListAdapter and other format classes)
+    api(platform("org.http4k:http4k-bom:6.25.1.0"))
+    api("org.http4k:http4k-core") // Core http4k functionality
+    api("org.http4k:http4k-format-moshi")
+    api("org.http4k:http4k-client-apache") // Required for HTTP requests in ReVoman
+    
+    // GraalVM JS for ReVoman (required for JavaScript evaluation in Postman collections)
+    implementation("org.graalvm.js:js-language:25.0.1")
+    
+    // Okio for I/O operations (used by ReVoman) - using same versions as graphalow
+    implementation("com.squareup.okio:okio-jvm:3.16.4")
+    
+    // Kotlinx datetime (may be used by ReVoman for date/time handling)
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime-jvm:0.7.1-0.6.x-compat")
+    
+    // Kotlin Faker for generating fake data (used by ReVoman for dynamic variables)
+    implementation("io.github.serpro69:kotlin-faker:1.16.0")
+    
+    // Underscore for utility functions (may be used by ReVoman)
+    implementation("com.github.javadev:underscore:1.119")
+    
+    // Spring Beans (may be used by ReVoman for dependency injection/bean management)
+    implementation("org.springframework:spring-beans:7.0.2")
+    
+    // PPrint for pretty printing (may be used by ReVoman for debugging/formatting)
+    implementation("io.exoquery:pprint-kotlin:3.0.0")
+    
+    // JetBrains Annotations (may be used by ReVoman)
+    compileOnly("org.jetbrains:annotations:26.0.2-1")
+    
+    // Kotlin Logging bundle (may be used by ReVoman)
+    implementation("io.github.oshai:kotlin-logging-jvm:7.0.14")
+    implementation("org.apache.logging.log4j:log4j-api:2.25.3")
+    implementation("org.apache.logging.log4j:log4j-core:2.25.3")
+    implementation("org.apache.logging.log4j:log4j-slf4j2-impl:2.25.3")
+    
+    // Immutables (may be used by ReVoman for code generation)
+    // Note: These are typically used with kapt, but adding as compileOnly for annotations
+    compileOnly("org.immutables:value-annotations:2.12.0")
 
     implementation(libs.tool.schema)
     implementation(ktorLibs.server.netty)
@@ -65,6 +120,10 @@ dependencies {
     testImplementation(ktorLibs.server.testHost)
     testImplementation(libs.kotlin.test.junit)
     testImplementation(libs.ktor.server.test.host.jvm)
+}
+
+moshi {
+    enableSealed = true
 }
 
 ktor {
