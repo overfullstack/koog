@@ -16,21 +16,18 @@ import org.jetbrains.demo.agent.koog.descriptors
 import org.jetbrains.demo.agent.koog.tools.addDate
 
 data class Tools(
-    val searchTool: TavilySearchTool,
     val weatherTool: WeatherTool,
-    val googleMaps: ToolRegistry,
+    val mcpTools: ToolRegistry,
 ) {
     fun registry() = ToolRegistry {
-        tools(searchTool)
-        tools(googleMaps.tools)
+        tools(mcpTools.tools)
         tools(weatherTool)
         tool(::addDate)
     }
 
     fun mapsAndWeather() = ToolSelectionStrategy.Tools(
         ToolRegistry {
-            tools(searchTool)
-            tools(googleMaps.tools)
+            tools(mcpTools.tools)
             tools(weatherTool)
             tool(::addDate)
         }.descriptors()
@@ -38,18 +35,16 @@ data class Tools(
 
     fun mapsAndWeb() = ToolSelectionStrategy.Tools(
         ToolRegistry {
-            tools(googleMaps.tools)
-            tools(searchTool)
+            tools(mcpTools.tools)
             tool(::addDate)
         }.descriptors()
     )
 }
 
 suspend fun Application.tools(config: AppConfig): Tools {
-    val googleMaps = McpToolRegistryProvider.fromSseTransport("http://localhost:9011")
+    val mcpTools = McpToolRegistryProvider.fromSseTransport("http://localhost:9011")
     val weather = WeatherTool(httpClient(), config.weatherApiUrl)
-    val searchTool = TavilySearchTool(httpClient(), config.tavilyApiKey)
-    return Tools(googleMaps = googleMaps, weatherTool = weather, searchTool = searchTool)
+    return Tools(mcpTools = mcpTools, weatherTool = weather)
 }
 
 private suspend fun McpToolRegistryProvider.fromSseTransport(url: String): ToolRegistry =

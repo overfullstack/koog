@@ -136,8 +136,7 @@ private fun poiResearcherAgent(
     )
 
     val toolRegistry = ToolRegistry {
-        tools(tools.googleMaps.tools)
-        tools(tools.searchTool)
+        tools(tools.mcpTools.tools)
     }
 
     return GraphAIAgent(

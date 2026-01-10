@@ -35,7 +35,7 @@ data class AppConfig(
     val langfusePublicKey: String,
     val langfuseSecretKey: String,
     val weatherApiUrl: String,
-    val tavilyApiKey: String,
+    val tavilyApiToken: String,
     val a2aEnabled: Boolean = false,
     val a2aBaseUrl: String = "http://localhost",
 )
