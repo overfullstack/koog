@@ -14,7 +14,6 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import org.jetbrains.demo.agent.tools.TavilySearchTool
 import org.jetbrains.demo.agent.tools.Tools
 import org.jetbrains.demo.agent.tools.WeatherTool
 import ai.koog.agents.core.tools.ToolRegistry
@@ -98,10 +97,9 @@ private suspend fun createTools(): Tools {
     }
 
     val weatherApiUrl = System.getenv("WEATHER_API_URL") ?: "https://api.weatherapi.com/v1"
-    val tavilyApiKey = System.getenv("TAVILY_API_KEY") ?: ""
     val mcpServerUrl = System.getenv("MCP_SERVER_URL") ?: "http://localhost:9011"
 
-    val googleMaps = try {
+    val mcpTools = try {
         McpToolRegistryProvider.fromTransport(McpToolRegistryProvider.defaultSseTransport(mcpServerUrl))
     } catch (e: Exception) {
         logger.warn("Could not connect to MCP server at $mcpServerUrl: ${e.message}")
@@ -109,11 +107,9 @@ private suspend fun createTools(): Tools {
     }
 
     val weatherTool = WeatherTool(httpClient, weatherApiUrl)
-    val searchTool = TavilySearchTool(httpClient, tavilyApiKey)
 
     return Tools(
-        searchTool = searchTool,
         weatherTool = weatherTool,
-        googleMaps = googleMaps
+        mcpTools = mcpTools
     )
 }

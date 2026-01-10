@@ -124,7 +124,7 @@ private fun routePlannerAgent(
     )
 
     val toolRegistry = ToolRegistry {
-        tools(tools.googleMaps.tools)
+        tools(tools.mcpTools.tools)
         tools(tools.weatherTool)
     }
 

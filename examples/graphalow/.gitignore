@@ -21,3 +21,4 @@ captures
 .env
 /koog-develop/
 /koog-docs/
+mcp-secrets.env
