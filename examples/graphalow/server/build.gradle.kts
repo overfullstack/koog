@@ -7,7 +7,7 @@ plugins {
 }
 
 application {
-    mainClass.set("org.jetbrains.demo.ApplicationKt")
+    mainClass.set("org.salesforce.demo.ApplicationKt")
 
     val isDevelopment: Boolean = project.ext.has("development")
     applicationDefaultJvmArgs = listOf("-Dio.ktor.development=$isDevelopment")
@@ -17,10 +17,10 @@ tasks.register<JavaExec>("runA2AServers") {
     description = "Run the A2A mesh servers (Route Planner, POI Researcher, Plan Composer)"
     group = "application"
     classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("org.jetbrains.demo.agent.a2a.A2AServerLauncherKt")
+    mainClass.set("org.salesforce.demo.agent.a2a.A2AServerLauncherKt")
 }
 
-group = "org.jetbrains.demo"
+group = "org.salesforce.demo"
 version = "1.0.0"
 
 kotlin {
@@ -60,11 +60,11 @@ dependencies {
 
 ktor {
     docker {
-        localImageName = "ktor-ai-example"
+        localImageName = "graphalow"
         imageTag = project.version.toString()
         externalRegistry =
             googleContainerRegistry(
-                projectName = provider { "Droidcon Bangladesh" },
+                projectName = provider { "Graphalow" },
                 appName = providers.environmentVariable("GCLOUD_APPNAME"),
                 username = providers.environmentVariable("GCLOUD_USERNAME"),
                 password = providers.environmentVariable("GCLOUD_REGISTRY_PASSWORD"),
@@ -72,6 +72,6 @@ ktor {
     }
     fatJar {
         allowZip64 = true
-        archiveFileName.set("dc-bangladesh.jar")
+        archiveFileName.set("graphalow.jar")
     }
 }
