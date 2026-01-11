@@ -115,7 +115,7 @@ private fun routePlannerAgent(
                 - Geographic and cultural attractions
                 - Practical routing for minimal travel time
                 
-                Use mapping and weather tools to make informed decisions.
+                Use google-maps mcp tools and openweather mcp tools to make informed decisions.
                 """.trimIndent()
             }
         },
