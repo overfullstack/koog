@@ -1,6 +1,7 @@
 package org.jetbrains.demo.agent.koog.ktor
 
 import ai.koog.agents.core.agent.AIAgent
+import ai.koog.agents.core.agent.AIAgentState
 import ai.koog.agents.core.agent.GraphAIAgent
 import ai.koog.agents.core.agent.GraphAIAgent.FeatureContext
 import ai.koog.agents.core.agent.config.AIAgentConfig
@@ -55,7 +56,6 @@ suspend fun <Input, Output> ServerSSESession.sseAgent(
         strategy = strategy,
         agentConfig = plugin.agentConfig(model).let(configureAgent),
         toolRegistry = plugin.agentConfig.toolRegistry + tools,
-        clock = clock,
         installFeatures = installFeatures
     )
 }
@@ -94,12 +94,11 @@ class StreamingAIAgent<Input, Output>(
     override val agentConfig: AIAgentConfig,
     override val id: String = Uuid.random().toString(),
     toolRegistry: ToolRegistry = ToolRegistry.EMPTY,
-    clock: Clock = Clock.System,
     installFeatures: FeatureContext.() -> Unit = {},
-) : AIAgent<Input, Flow<StreamingAIAgent.Event<Input, Output>>> {
+) : AIAgent<Input, Flow<StreamingAIAgent.Event<Input, Output>>>() {
 
-    override suspend fun getState(): AIAgent.Companion.State<Flow<Event<Input, Output>>> =
-        AIAgent.Companion.State.NotStarted()
+    override suspend fun getState(): AIAgentState<Flow<Event<Input, Output>>> =
+        AIAgentState.NotStarted()
 
     override suspend fun close() {
         agent.close()
