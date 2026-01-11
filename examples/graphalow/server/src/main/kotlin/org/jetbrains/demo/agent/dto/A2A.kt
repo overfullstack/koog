@@ -1,6 +1,7 @@
-package org.jetbrains.demo.agent.a2a.model
+package org.jetbrains.demo.agent.dto
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -48,4 +49,13 @@ data class TravelPlanResult(
     val pageLinks: List<InternetResource>,
     @property:LLMDescription("List of country names that the travelers will visit")
     val countriesVisited: List<String>
+)
+
+@Serializable
+data class PointOfInterest(
+    val name: String,
+    val description: String,
+    val location: String,
+    val fromDate: LocalDate,
+    val toDate: LocalDate,
 )

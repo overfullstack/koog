@@ -1,10 +1,10 @@
 package org.jetbrains.demo.agent.tools
 
 import ai.koog.agents.core.agent.entity.ToolSelectionStrategy
+import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.core.tools.reflect.tool
 import ai.koog.agents.mcp.McpToolRegistryProvider
-import org.jetbrains.demo.agent.koog.descriptors
 
 data class Tools(
     val mcpTools: ToolRegistry,
@@ -16,6 +16,9 @@ data class Tools(
 
     fun selectionStrategy() = ToolSelectionStrategy.Tools(registry().descriptors())
 }
+
+fun ToolRegistry.descriptors(): List<ToolDescriptor> =
+    tools.map { it.descriptor }
 
 suspend fun tools(): Tools {
     val mcpTools = McpToolRegistryProvider.fromSseTransport("http://localhost:9011")

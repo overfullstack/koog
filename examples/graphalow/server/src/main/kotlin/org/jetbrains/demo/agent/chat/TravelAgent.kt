@@ -16,6 +16,7 @@ import io.ktor.server.sse.ServerSSESession
 import io.ktor.server.sse.sse
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.catch
+import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
@@ -37,25 +38,21 @@ import org.jetbrains.demo.agent.chat.strategy.ProposedTravelPlanProvider
 import org.jetbrains.demo.agent.chat.strategy.ResearchedPointOfInterest
 import org.jetbrains.demo.agent.chat.strategy.ResearchedPointOfInterestProvider
 import org.jetbrains.demo.agent.chat.strategy.planner
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.Agent
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAfterLLMCall
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAfterNode
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAgentFinished
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnAgentRunError
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnBeforeAgentStarted
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnBeforeLLMCall
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnBeforeNode
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnNodeExecutionError
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnStrategyFinished
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnStrategyStarted
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolCall
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolCallFailure
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolCallResult
-import org.jetbrains.demo.agent.koog.ktor.StreamingAIAgent.Event.OnToolValidationError
-import org.jetbrains.demo.agent.koog.ktor.sseAgent
-import org.jetbrains.demo.agent.koog.ktor.withMaxAgentIterations
-import org.jetbrains.demo.agent.koog.ktor.withSystemPrompt
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.Agent
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnAfterLLMCall
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnAfterNode
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnAgentFinished
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnAgentRunError
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnBeforeAgentStarted
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnBeforeLLMCall
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnBeforeNode
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnNodeExecutionError
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnStrategyFinished
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnStrategyStarted
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnToolCall
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnToolCallFailure
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnToolCallResult
+import org.jetbrains.demo.agent.chat.StreamingAIAgent.Event.OnToolValidationError
 import org.jetbrains.demo.agent.tools.tools
 import org.slf4j.LoggerFactory
 import kotlin.concurrent.atomics.AtomicInt
@@ -95,7 +92,7 @@ fun Application.agent(config: AppConfig) {
                     it.withSystemPrompt(prompt("travel-assistant-agent") {
                         system(markdown {
                             "Today's date is ${
-                                kotlinx.datetime.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                                Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
                             }."
                             +"You're an expert travel assistant helping users reach their destination in a reliable way."
                             header(1, "Task description:")

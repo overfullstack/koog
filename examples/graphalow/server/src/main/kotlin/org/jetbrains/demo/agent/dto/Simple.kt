@@ -1,17 +1,8 @@
-package org.jetbrains.demo.agent.a2a.model
+package org.jetbrains.demo.agent.dto
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
-
-@Serializable
-data class PointOfInterest(
-    val name: String,
-    val description: String,
-    val location: String,
-    val fromDate: LocalDate,
-    val toDate: LocalDate,
-)
 
 @Serializable
 data class ResearchedPointOfInterest(

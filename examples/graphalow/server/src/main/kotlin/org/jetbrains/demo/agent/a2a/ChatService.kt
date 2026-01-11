@@ -16,7 +16,7 @@ import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
 import org.jetbrains.demo.TransportType
 import org.jetbrains.demo.Traveler
-import org.jetbrains.demo.agent.a2a.model.TravelPlanResult
+import org.jetbrains.demo.agent.dto.TravelPlanResult
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.days

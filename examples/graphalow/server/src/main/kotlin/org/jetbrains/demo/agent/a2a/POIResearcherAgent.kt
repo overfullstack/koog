@@ -23,7 +23,6 @@ import ai.koog.agents.core.agent.GraphAIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
@@ -31,8 +30,8 @@ import ai.koog.prompt.markdown.markdown
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.agent.a2a.model.POIResearchRequest
-import org.jetbrains.demo.agent.a2a.model.POIResearchResult
+import org.jetbrains.demo.agent.dto.POIResearchRequest
+import org.jetbrains.demo.agent.dto.POIResearchResult
 import org.jetbrains.demo.agent.tools.Tools
 import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf

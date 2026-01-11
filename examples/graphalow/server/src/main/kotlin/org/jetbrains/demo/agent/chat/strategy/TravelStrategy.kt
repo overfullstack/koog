@@ -9,9 +9,9 @@ import ai.koog.agents.ext.agent.subgraphWithTask
 import ai.koog.prompt.markdown.markdown
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.agent.a2a.model.PointOfInterest
-import org.jetbrains.demo.agent.a2a.model.PointOfInterestFindings
-import org.jetbrains.demo.agent.koog.parallel
+import org.jetbrains.demo.agent.dto.PointOfInterest
+import org.jetbrains.demo.agent.dto.PointOfInterestFindings
+import org.jetbrains.demo.agent.chat.parallel
 import org.jetbrains.demo.agent.tools.Tools
 
 private val IMAGE_WIDTH = 400

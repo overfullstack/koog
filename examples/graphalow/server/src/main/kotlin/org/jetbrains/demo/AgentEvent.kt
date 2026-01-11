@@ -14,9 +14,9 @@ import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
-import org.jetbrains.demo.agent.a2a.model.PointOfInterest
-import org.jetbrains.demo.agent.a2a.model.ProposedTravelPlan
-import org.jetbrains.demo.agent.a2a.model.ResearchedPointOfInterest
+import org.jetbrains.demo.agent.dto.PointOfInterest
+import org.jetbrains.demo.agent.dto.ProposedTravelPlan
+import org.jetbrains.demo.agent.dto.ResearchedPointOfInterest
 import kotlin.jvm.JvmStatic
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid

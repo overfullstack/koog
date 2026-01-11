@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.koog.ktor
+package org.jetbrains.demo.agent.chat
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.AIAgentState
@@ -9,10 +9,6 @@ import ai.koog.agents.core.agent.context.AIAgentContext
 import ai.koog.agents.core.agent.context.AIAgentGraphContextBase
 import ai.koog.agents.core.agent.entity.AIAgentGraphStrategy
 import ai.koog.agents.core.agent.entity.AIAgentNodeBase
-import ai.koog.agents.core.feature.model.AIAgentError
-import ai.koog.agents.core.tools.ToolDescriptor
-import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.agents.core.feature.handler.agent.AgentCompletedContext
 import ai.koog.agents.core.feature.handler.agent.AgentExecutionFailedContext
 import ai.koog.agents.core.feature.handler.agent.AgentStartingContext
@@ -27,6 +23,10 @@ import ai.koog.agents.core.feature.handler.tool.ToolCallCompletedContext
 import ai.koog.agents.core.feature.handler.tool.ToolCallFailedContext
 import ai.koog.agents.core.feature.handler.tool.ToolCallStartingContext
 import ai.koog.agents.core.feature.handler.tool.ToolValidationFailedContext
+import ai.koog.agents.core.feature.model.AIAgentError
+import ai.koog.agents.core.tools.ToolDescriptor
+import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.features.eventHandler.feature.EventHandler
 import ai.koog.ktor.Koog
 import ai.koog.prompt.dsl.ModerationResult
 import ai.koog.prompt.dsl.Prompt
@@ -40,14 +40,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.datetime.Clock as KotlinxClock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
-import kotlin.time.Clock
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
+import kotlinx.datetime.Clock as KotlinxClock
 
 suspend fun <Input, Output> ServerSSESession.sseAgent(
     inputType: KType,
@@ -55,7 +54,6 @@ suspend fun <Input, Output> ServerSSESession.sseAgent(
     strategy: AIAgentGraphStrategy<Input, Output>,
     model: LLModel,
     tools: ToolRegistry = ToolRegistry.EMPTY,
-    clock: Clock = Clock.System,
     // TODO We need to create a proper `AgentConfig` builder inside of Ktor that allows overriding global configuration.
     configureAgent: (AIAgentConfig) -> (AIAgentConfig) = { it },
     installFeatures: FeatureContext.() -> Unit = {}
@@ -85,7 +83,6 @@ suspend inline fun <reified Input, reified Output> ServerSSESession.sseAgent(
     strategy: AIAgentGraphStrategy<Input, Output>,
     model: LLModel,
     tools: ToolRegistry = ToolRegistry.EMPTY,
-    clock: Clock = Clock.System,
     noinline configureAgent: (AIAgentConfig) -> (AIAgentConfig) = { it },
     noinline installFeatures: FeatureContext.() -> Unit = {}
 ): StreamingAIAgent<Input, Output> = sseAgent(
@@ -94,7 +91,6 @@ suspend inline fun <reified Input, reified Output> ServerSSESession.sseAgent(
     strategy,
     model,
     tools,
-    clock,
     configureAgent,
     installFeatures
 )
@@ -277,35 +273,19 @@ class StreamingAIAgent<Input, Output>(
         installFeatures()
         @Suppress("UNCHECKED_CAST")
         install(EventHandler) {
-            onAgentStarting { ctx: AgentStartingContext ->
-                send(
-                    Event.OnBeforeAgentStarted(
-                        ctx.agent as AIAgent<Input, Output>,
-                        ctx.runId,
-                        ctx.context
-                    )
-                )
+            val onAgentStartingHandler: suspend (AgentStartingContext) -> Unit = { ctx ->
+                send(Event.OnBeforeAgentStarted(ctx.agent as AIAgent<Input, Output>, ctx.runId, ctx.context))
             }
-            onAgentCompleted { ctx: AgentCompletedContext ->
-                send(
-                    Event.OnAgentFinished(
-                        ctx.agentId,
-                        ctx.runId,
-                        ctx.result as Output
-                    )
-                )
+            val onAgentCompletedHandler: suspend (AgentCompletedContext) -> Unit = { ctx ->
+                send(Event.OnAgentFinished(ctx.agentId, ctx.runId, ctx.result as Output))
             }
-            onAgentExecutionFailed { ctx: AgentExecutionFailedContext -> send(Event.OnAgentRunError(ctx.agentId, ctx.runId, ctx.throwable)) }
-
-            onStrategyStarting { ctx: StrategyStartingContext ->
-                send(
-                    Event.OnStrategyStarted(
-                        ctx.context.runId,
-                        ctx.strategy.name
-                    )
-                )
+            val onAgentExecutionFailedHandler: suspend (AgentExecutionFailedContext) -> Unit = { ctx ->
+                send(Event.OnAgentRunError(ctx.agentId, ctx.runId, ctx.throwable))
             }
-            onStrategyCompleted { ctx: StrategyCompletedContext ->
+            val onStrategyStartingHandler: suspend (StrategyStartingContext) -> Unit = { ctx ->
+                send(Event.OnStrategyStarted(ctx.context.runId, ctx.strategy.name))
+            }
+            val onStrategyCompletedHandler: suspend (StrategyCompletedContext) -> Unit = { ctx ->
                 send(
                     Event.OnStrategyFinished(
                         ctx.context.runId,
@@ -315,24 +295,19 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-
-            onNodeExecutionStarting { ctx: NodeExecutionStartingContext -> send(Event.OnBeforeNode(ctx.node, ctx.context, ctx.input, ctx.inputType)) }
-            onNodeExecutionCompleted { ctx: NodeExecutionCompletedContext ->
-                send(
-                    Event.OnAfterNode(
-                        ctx.node,
-                        ctx.context,
-                        ctx.input,
-                        ctx.output,
-                        ctx.inputType,
-                        ctx.outputType
-                    )
-                )
+            val onNodeExecutionStartingHandler: suspend (NodeExecutionStartingContext) -> Unit = { ctx ->
+                send(Event.OnBeforeNode(ctx.node, ctx.context, ctx.input, ctx.inputType))
             }
-            onNodeExecutionFailed { ctx: NodeExecutionFailedContext -> send(Event.OnNodeExecutionError(ctx.node, ctx.context, ctx.throwable)) }
-
-            onLLMCallStarting { ctx: LLMCallStartingContext -> send(Event.OnBeforeLLMCall(ctx.runId, ctx.prompt, ctx.model, ctx.tools)) }
-            onLLMCallCompleted { ctx: LLMCallCompletedContext ->
+            val onNodeExecutionCompletedHandler: suspend (NodeExecutionCompletedContext) -> Unit = { ctx ->
+                send(Event.OnAfterNode(ctx.node, ctx.context, ctx.input, ctx.output, ctx.inputType, ctx.outputType))
+            }
+            val onNodeExecutionFailedHandler: suspend (NodeExecutionFailedContext) -> Unit = { ctx ->
+                send(Event.OnNodeExecutionError(ctx.node, ctx.context, ctx.throwable))
+            }
+            val onLLMCallStartingHandler: suspend (LLMCallStartingContext) -> Unit = { ctx ->
+                send(Event.OnBeforeLLMCall(ctx.runId, ctx.prompt, ctx.model, ctx.tools))
+            }
+            val onLLMCallCompletedHandler: suspend (LLMCallCompletedContext) -> Unit = { ctx ->
                 send(
                     Event.OnAfterLLMCall(
                         ctx.runId,
@@ -344,41 +319,33 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
+            val onToolCallStartingHandler: suspend (ToolCallStartingContext) -> Unit = { ctx ->
+                send(Event.OnToolCall(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs))
+            }
+            val onToolValidationFailedHandler: suspend (ToolValidationFailedContext) -> Unit = { ctx ->
+                send(Event.OnToolValidationError(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs, ctx.error))
+            }
+            val onToolCallFailedHandler: suspend (ToolCallFailedContext) -> Unit = { ctx ->
+                send(Event.OnToolCallFailure(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs, ctx.error))
+            }
+            val onToolCallCompletedHandler: suspend (ToolCallCompletedContext) -> Unit = { ctx ->
+                send(Event.OnToolCallResult(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs, ctx.toolResult))
+            }
 
-            onToolCallStarting { ctx: ToolCallStartingContext -> send(Event.OnToolCall(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs)) }
-            onToolValidationFailed { ctx: ToolValidationFailedContext ->
-                send(
-                    Event.OnToolValidationError(
-                        ctx.runId,
-                        ctx.toolCallId,
-                        ctx.toolName,
-                        ctx.toolArgs,
-                        ctx.error
-                    )
-                )
-            }
-            onToolCallFailed { ctx: ToolCallFailedContext ->
-                send(
-                    Event.OnToolCallFailure(
-                        ctx.runId,
-                        ctx.toolCallId,
-                        ctx.toolName,
-                        ctx.toolArgs,
-                        ctx.error
-                    )
-                )
-            }
-            onToolCallCompleted { ctx: ToolCallCompletedContext ->
-                send(
-                    Event.OnToolCallResult(
-                        ctx.runId,
-                        ctx.toolCallId,
-                        ctx.toolName,
-                        ctx.toolArgs,
-                        ctx.toolResult
-                    )
-                )
-            }
+            onAgentStarting(onAgentStartingHandler)
+            onAgentCompleted(onAgentCompletedHandler)
+            onAgentExecutionFailed(onAgentExecutionFailedHandler)
+            onStrategyStarting(onStrategyStartingHandler)
+            onStrategyCompleted(onStrategyCompletedHandler)
+            onNodeExecutionStarting(onNodeExecutionStartingHandler)
+            onNodeExecutionCompleted(onNodeExecutionCompletedHandler)
+            onNodeExecutionFailed(onNodeExecutionFailedHandler)
+            onLLMCallStarting(onLLMCallStartingHandler)
+            onLLMCallCompleted(onLLMCallCompletedHandler)
+            onToolCallStarting(onToolCallStartingHandler)
+            onToolValidationFailed(onToolValidationFailedHandler)
+            onToolCallFailed(onToolCallFailedHandler)
+            onToolCallCompleted(onToolCallCompletedHandler)
         }
     }
 
