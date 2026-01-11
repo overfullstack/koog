@@ -1,7 +1,7 @@
 package org.jetbrains.demo.agent.chat.strategy
 
 import kotlinx.serialization.Serializable
-import org.jetbrains.demo.agent.a2a.model.PointOfInterest
+import org.jetbrains.demo.agent.dto.PointOfInterest
 
 @Serializable
 data class ItineraryIdeas(val pointsOfInterest: List<PointOfInterest>)

@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.koog
+package org.jetbrains.demo.agent.chat
 
 import ai.koog.agents.core.agent.context.AIAgentGraphContextBase
 import ai.koog.agents.core.agent.context.getAgentContextData
@@ -102,11 +102,7 @@ private fun <IncomingInput, Wrapped, Value, OutgoingOutput> createParallelNodeDe
                     }
 
                     if (nodeOutput == null) {
-                        if (nodeContext.getAgentContextData() != null) {
-                            throw IllegalStateException(
-                                "Checkpoints are not supported in parallel execution. Node: ${node.name}, Context: ${nodeContext.getAgentContextData()}"
-                            )
-                        }
+                        check(nodeContext.getAgentContextData() == null) { "Checkpoints are not supported in parallel execution. Node: ${node.name}, Context: ${nodeContext.getAgentContextData()}" }
                         // Skip this result if node returned null (e.g., due to OTel error)
                         return@async null
                     }

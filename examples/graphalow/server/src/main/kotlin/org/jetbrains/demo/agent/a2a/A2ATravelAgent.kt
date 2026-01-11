@@ -10,8 +10,8 @@ import io.ktor.sse.ServerSentEvent
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.*
-import org.jetbrains.demo.agent.a2a.model.ProposedTravelPlan
-import org.jetbrains.demo.agent.a2a.model.TravelPlanResult
+import org.jetbrains.demo.agent.dto.ProposedTravelPlan
+import org.jetbrains.demo.agent.dto.TravelPlanResult
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2ATravelAgent")
