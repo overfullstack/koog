@@ -77,7 +77,7 @@ fun Route.sse(
 ): Route = route(path, method) { sse(handler) }
 
 fun Application.agent(config: AppConfig) {
-    val deferredTools = async { tools(config) }
+    val deferredTools = async { tools() }
 
     routing {
         sse("/plan", HttpMethod.Post) {
@@ -215,7 +215,6 @@ private fun StreamingAIAgent.Event<JourneyForm, ProposedTravelPlan>.toDomainEven
                     is PromptMessage.Reasoning -> {
                         logger.info("${ANSI_GREEN}Reasoning: ${response.content}$ANSI_RESET")
                     }
-                    else -> { /* ignore other message types */ }
                 }
             }
             logger.info("${ANSI_GREEN}Input tokens: ${inputTokens.load()}, output tokens: ${outputTokens.load()}, total tokens: ${totalTokens.load()}$ANSI_RESET")

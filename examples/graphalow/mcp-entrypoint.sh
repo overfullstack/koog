@@ -4,7 +4,8 @@
 
 cat > /.mcp-secrets.env << EOF
 google-maps-comprehensive.api_key=${GOOGLE_MAPS_API_KEY}
-tavily.api_key=${TAVILY_API_TOKEN}
+tavily.api_key=${TAVILY_API_KEY}
+openweather.owm_api_key=${OPEN_WEATHER_API_KEY}
 EOF
 
 # Execute the gateway with all arguments passed to this script
