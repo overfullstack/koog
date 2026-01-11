@@ -1,4 +1,4 @@
-package org.salesforce.travel.agent.a2a
+package org.salesforce
 
 import ai.koog.agents.features.opentelemetry.attribute.CustomAttribute
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetryConfig
@@ -24,10 +24,10 @@ object A2ATelemetry {
     
     init {
         if (isEnabled) {
-            logger.info("${_root_ide_package_.org.salesforce.travel.agent.LogColors.SERVER} Langfuse telemetry enabled")
-            logger.info("${_root_ide_package_.org.salesforce.travel.agent.LogColors.SERVER}   Host: ${langfuseUrl ?: "https://cloud.langfuse.com"}")
+            logger.info("${LogColors.SERVER} Langfuse telemetry enabled")
+            logger.info("${LogColors.SERVER}   Host: ${langfuseUrl ?: "https://cloud.langfuse.com"}")
         } else {
-            logger.warn("${_root_ide_package_.org.salesforce.travel.agent.LogColors.SERVER} Langfuse telemetry disabled - missing LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY")
+            logger.warn("${LogColors.SERVER} Langfuse telemetry disabled - missing LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY")
         }
     }
     
@@ -44,7 +44,7 @@ object A2ATelemetry {
         userId: String? = null
     ) {
         if (!isEnabled) {
-            logger.debug("${_root_ide_package_.org.salesforce.travel.agent.LogColors.SERVER} Skipping Langfuse configuration - not enabled")
+            logger.debug("${LogColors.SERVER} Skipping Langfuse configuration - not enabled")
             return
         }
         
@@ -64,7 +64,7 @@ object A2ATelemetry {
             traceAttributes = traceAttributes
         )
         
-        logger.debug("${_root_ide_package_.org.salesforce.travel.agent.LogColors.SERVER} Langfuse configured for agent: $agentName")
+        logger.debug("${LogColors.SERVER} Langfuse configured for agent: $agentName")
     }
     
     /**

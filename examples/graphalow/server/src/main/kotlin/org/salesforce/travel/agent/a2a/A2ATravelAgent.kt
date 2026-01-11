@@ -9,6 +9,10 @@ import io.ktor.server.sse.*
 import io.ktor.sse.ServerSentEvent
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.salesforce.travel.AgentEvent
+import org.salesforce.travel.AgentEvent.AgentStarted
+import org.salesforce.travel.AgentEvent.Message
+import org.salesforce.travel.agent.a2a.agents.TravelAgentsOrchestrator
 import org.salesforce.travel.dto.ProposedTravelPlan
 import org.slf4j.LoggerFactory
 
@@ -26,7 +30,7 @@ data class A2ATravelPlanResponse(
     val error: String? = null
 )
 
-fun Application.a2aTravelAgentRoutes(orchestrator: org.salesforce.travel.agent.a2a.agents.TravelAgentsOrchestrator) {
+fun Application.a2aTravelAgentRoutes(orchestrator: TravelAgentsOrchestrator) {
     routing {
         route("/a2a") {
             post("/plan") {
@@ -64,16 +68,19 @@ fun Application.a2aTravelAgentRoutes(orchestrator: org.salesforce.travel.agent.a
                     logger.info("Received streaming travel plan request via A2A mesh: ${journeyForm.fromCity} to ${journeyForm.toCity}")
 
                     send(ServerSentEvent(data = json.encodeToString(
-                        org.salesforce.travel.AgentEvent.AgentStarted.serializer(),
-                        org.salesforce.travel.AgentEvent.AgentStarted(agentId = "a2a-orchestrator", runId = "a2a-run"))))
+                        AgentStarted.serializer(),
+                        AgentStarted(agentId = "a2a-orchestrator", runId = "a2a-run")
+                    )))
 
                     send(ServerSentEvent(data = json.encodeToString(
-                        org.salesforce.travel.AgentEvent.Message.serializer(),
-                        org.salesforce.travel.AgentEvent.Message(listOf("Starting A2A mesh orchestration...")))))
+                        Message.serializer(),
+                        Message(listOf("Starting A2A mesh orchestration..."))
+                    )))
 
                     send(ServerSentEvent(data = json.encodeToString(
-                        org.salesforce.travel.AgentEvent.Message.serializer(),
-                        org.salesforce.travel.AgentEvent.Message(listOf("Calling Route Planner Agent...")))))
+                        Message.serializer(),
+                        Message(listOf("Calling Route Planner Agent..."))
+                    )))
 
                     val travelPlan = orchestrator.planTravel(journeyForm)
 
@@ -87,18 +94,19 @@ fun Application.a2aTravelAgentRoutes(orchestrator: org.salesforce.travel.agent.a
                     )
 
                     send(ServerSentEvent(data = json.encodeToString(
-                        org.salesforce.travel.AgentEvent.AgentFinished.serializer(),
-                        org.salesforce.travel.AgentEvent.AgentFinished(
+                        AgentEvent.AgentFinished.serializer(),
+                        AgentEvent.AgentFinished(
                             agentId = "a2a-orchestrator",
                             runId = "a2a-run",
                             plan = proposedPlan
-                        ))))
+                        )
+                    )))
 
                 } catch (e: Exception) {
                     logger.error("Error in A2A streaming travel plan", e)
                     send(ServerSentEvent(data = json.encodeToString(
-                        org.salesforce.travel.AgentEvent.AgentError.serializer(),
-                        org.salesforce.travel.AgentEvent.AgentError(
+                        AgentEvent.AgentError.serializer(),
+                        AgentEvent.AgentError(
                             agentId = "a2a-orchestrator",
                             runId = "a2a-run",
                             result = e.message

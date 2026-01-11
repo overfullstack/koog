@@ -1,4 +1,4 @@
-package org.salesforce.travel.tools
+package org.salesforce.tools
 
 import ai.koog.agents.core.agent.entity.ToolSelectionStrategy
 import ai.koog.agents.core.tools.ToolDescriptor

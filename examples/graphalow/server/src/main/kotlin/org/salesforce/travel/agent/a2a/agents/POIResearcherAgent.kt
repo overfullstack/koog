@@ -30,11 +30,11 @@ import ai.koog.prompt.markdown.markdown
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import org.salesforce.travel.LLM_MODEL
-import org.salesforce.travel.agent.a2a.A2ATelemetry
-import org.salesforce.travel.agent.LogColors
+import org.salesforce.A2ATelemetry
+import org.salesforce.LogColors
 import org.salesforce.travel.dto.POIResearchRequest
 import org.salesforce.travel.dto.POIResearchResult
-import org.salesforce.travel.tools.Tools
+import org.salesforce.tools.Tools
 import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi

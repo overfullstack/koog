@@ -1,4 +1,4 @@
-package org.salesforce.travel
+package org.salesforce.swara
 
 import ai.koog.ktor.Koog
 import io.ktor.serialization.kotlinx.json.json
@@ -14,12 +14,18 @@ import io.ktor.server.websocket.pingPeriod
 import io.ktor.server.websocket.timeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.salesforce.travel.agent.a2a.agents.A2AAgentEndpoints
-import org.salesforce.travel.agent.a2a.A2AConfig
-import org.salesforce.travel.agent.a2a.agents.TravelAgentsOrchestrator
-import org.salesforce.travel.agent.a2a.a2aTravelAgentRoutes
-import org.salesforce.travel.agent.a2a.chatRoutes
-import org.salesforce.travel.agent.simple.agent
+import org.jetbrains.demo.agent.a2a.A2ASchedulerEndpoints
+import org.jetbrains.demo.agent.a2a.APPOINTMENT_BOOKING_PATH
+import org.jetbrains.demo.agent.a2a.APPOINTMENT_VALIDATION_PATH
+import org.jetbrains.demo.agent.a2a.SERVICE_TERRITORY_VALIDATION_PATH
+import org.jetbrains.demo.agent.a2a.SchedulerAgentOrchestrator
+import org.jetbrains.demo.agent.a2a.TIMESLOT_VALIDATION_PATH
+import org.salesforce.swara.a2a.A2AConfig
+import org.salesforce.swara.a2a.a2aSchedulerRoutes
+import org.salesforce.swara.agents.LOCATION_WEATHER_PATH
+import org.salesforce.swara.chat.ChatService
+import org.salesforce.swara.chat.chatRoutes
+import org.salesforce.travel.AppConfig
 import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
@@ -27,7 +33,7 @@ import kotlin.time.Duration.Companion.seconds
 data class AppConfig(
     val host: String,
     val port: Int,
-    val auth: AuthConfig,
+    val auth: org.salesforce.travel.AuthConfig,
     val openAIKey: String,
     val anthropicKey: String,
     val langfuseUrl: String,
@@ -69,8 +75,6 @@ fun Application.app(config: AppConfig) {
     }
 
     configure()
-    agent(config)
-    
     // A2A Mesh mode (optional - can run alongside traditional agent)
     if (config.a2aEnabled) {
         a2aMesh(config)
@@ -80,27 +84,31 @@ fun Application.app(config: AppConfig) {
 private fun Application.a2aMesh(config: AppConfig) {
     val a2aConfig = A2AConfig(
         baseUrl = config.a2aBaseUrl,
-        routePlannerPort = 9101,
-        poiResearcherPort = 9102,
-        planComposerPort = 9103
+        locationWeatherPort = 9101,
+        appointmentValidationPort = 9103,
+        serviceTerritoryValidationPort = 9104,
+        timeslotValidationPort = 9105,
+        appointmentBookingPort = 9102
     )
 
     // Create the orchestrator that connects to the A2A agent servers
     // The A2A agent servers must be started separately (see A2AServerLauncher.kt)
-    val travelAgentsOrchestrator = TravelAgentsOrchestrator(
-        A2AAgentEndpoints(
-            routePlannerUrl = "${config.a2aBaseUrl}:${a2aConfig.routePlannerPort}/a2a/route-planner",
-            poiResearcherUrl = "${config.a2aBaseUrl}:${a2aConfig.poiResearcherPort}/a2a/poi-researcher",
-            planComposerUrl = "${config.a2aBaseUrl}:${a2aConfig.planComposerPort}/a2a/plan-composer"
+    val schedulerAgentOrchestrator = SchedulerAgentOrchestrator(
+        A2ASchedulerEndpoints(
+            locationWeatherUrl = "${config.a2aBaseUrl}:${a2aConfig.locationWeatherPort}$LOCATION_WEATHER_PATH",
+            appointmentValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH",
+            serviceTerritoryValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
+            timeslotValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
+            appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
         )
     )
-    a2aTravelAgentRoutes(travelAgentsOrchestrator)
+    a2aSchedulerRoutes()
     
     // Chat UI endpoints (Claude-like experience)
     val koogPlugin = pluginOrNull(Koog)
     val chatService = if (koogPlugin != null) {
         @Suppress("invisible_reference", "invisible_member")
-        (org.salesforce.travel.agent.a2a.ChatService(travelAgentsOrchestrator, koogPlugin.promptExecutor))
+        (ChatService(schedulerAgentOrchestrator, koogPlugin.promptExecutor))
     } else {
         throw IllegalStateException("Koog plugin must be installed before a2aMesh")
     }

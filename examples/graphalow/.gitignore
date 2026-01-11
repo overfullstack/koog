@@ -22,3 +22,4 @@ captures
 /koog-develop/
 /koog-docs/
 mcp-secrets.env
+/server/js/node_modules/
