@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.chat.strategy
+package org.jetbrains.demo.agent.simple.strategy
 
 import ai.koog.agents.core.tools.Tool
 import kotlinx.serialization.KSerializer

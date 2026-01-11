@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.a2a
+package org.jetbrains.demo.agent
 
 /**
  * ANSI color codes for colored terminal logging.
@@ -8,7 +8,7 @@ object LogColors {
     // ANSI escape codes
     private const val RESET = "\u001B[0m"
     private const val BOLD = "\u001B[1m"
-    
+
     // Colors
     private const val RED = "\u001B[31m"
     private const val GREEN = "\u001B[32m"
@@ -17,7 +17,7 @@ object LogColors {
     private const val MAGENTA = "\u001B[35m"
     private const val CYAN = "\u001B[36m"
     private const val WHITE = "\u001B[37m"
-    
+
     // Bright colors
     private const val BRIGHT_RED = "\u001B[91m"
     private const val BRIGHT_GREEN = "\u001B[92m"
@@ -42,7 +42,7 @@ object LogColors {
     val LLM = "$BRIGHT_RED[LLM]$RESET"
     val SERVER = "$BOLD$WHITE[SERVER]$RESET"
     val USER_INPUT = "$BOLD$BG_GREEN$BLACK[USER_INPUT]$RESET"
-    
+
     // Utility functions for inline coloring
     fun magenta(text: String): String = "$BRIGHT_MAGENTA$text$RESET"
     fun cyan(text: String): String = "$BRIGHT_CYAN$text$RESET"
@@ -52,7 +52,7 @@ object LogColors {
     fun red(text: String): String = "$BRIGHT_RED$text$RESET"
     fun bold(text: String): String = "$BOLD$text$RESET"
     fun userInput(text: String): String = "$BG_GREEN$BLACK$text$RESET"
-    
+
     // Banners
     fun orchestratorBanner(text: String): String = "$BOLD$BRIGHT_MAGENTA========== $text ==========$RESET"
     fun routePlannerBanner(text: String): String = "$BOLD$GREEN========== $text ==========$RESET"

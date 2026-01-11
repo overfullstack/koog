@@ -1,9 +1,9 @@
-package org.jetbrains.demo.agent.chat.strategy
+package org.jetbrains.demo.agent.simple.strategy
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
-import org.jetbrains.demo.agent.dto.Day
-import org.jetbrains.demo.agent.dto.InternetResource
+import org.jetbrains.demo.dto.Day
+import org.jetbrains.demo.dto.InternetResource
 
 @Serializable
 data class ProposedTravelPlan(
@@ -21,7 +21,7 @@ data class ProposedTravelPlan(
     val countriesVisited: List<String>,
 ) {
     fun toDomain() =
-        org.jetbrains.demo.agent.dto.ProposedTravelPlan(
+        org.jetbrains.demo.dto.ProposedTravelPlan(
             title,
             plan,
             days,

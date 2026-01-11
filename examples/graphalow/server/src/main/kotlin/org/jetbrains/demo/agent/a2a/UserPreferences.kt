@@ -14,6 +14,7 @@ import ai.koog.rag.base.files.JVMFileSystemProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.datetime.Clock
 import kotlinx.serialization.Serializable
+import org.jetbrains.demo.agent.LogColors
 import java.nio.file.Path
 
 @Serializable

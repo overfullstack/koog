@@ -16,7 +16,16 @@ import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
 import org.jetbrains.demo.TransportType
 import org.jetbrains.demo.Traveler
-import org.jetbrains.demo.agent.dto.TravelPlanResult
+import org.jetbrains.demo.agent.LogColors
+import org.jetbrains.demo.agent.a2a.agents.InteractivePlanningEvent
+import org.jetbrains.demo.agent.a2a.agents.InteractivePlanningState
+import org.jetbrains.demo.agent.a2a.agents.POIOption
+import org.jetbrains.demo.agent.a2a.agents.PlanningProgress
+import org.jetbrains.demo.agent.a2a.agents.PlanningStage
+import org.jetbrains.demo.agent.a2a.agents.PreferenceOption
+import org.jetbrains.demo.agent.a2a.agents.TravelAgentsOrchestrator
+import org.jetbrains.demo.agent.a2a.agents.UserPlanningResponse
+import org.jetbrains.demo.dto.TravelPlanResult
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.days
@@ -161,7 +170,7 @@ data class ChatStreamEvent(
 )
 
 class ChatService(
-    private val orchestrator: TravelOrchestratorAgent,
+    private val orchestrator: TravelAgentsOrchestrator,
     private val promptExecutor: PromptExecutor,
     private val model: LLModel = LLM_MODEL
 ) {
@@ -332,6 +341,14 @@ class ChatService(
         
         logger.debug("${LogColors.CHAT} Current state: $currentState, Journey form: ${journeyForm != null}")
 
+        // Check if there's a pending interactive checkpoint awaiting user response
+        if (session.pendingCheckpoint != null) {
+            logger.info("${LogColors.CHAT} Handling response to interactive checkpoint")
+            handlePlanningResponse(sessionId, request.message)
+                .collect { emit(it) }
+            return@flow
+        }
+
         // Use LLM to classify user intent semantically
         val classification = classifyIntent(
             message = request.message,
@@ -373,7 +390,7 @@ class ChatService(
             
             // User confirms they want to start planning (with full JourneyForm)
             classification.intent == UserIntent.START_PLANNING && journeyForm != null -> {
-                handlePlanningFlow(sessionId, userId, journeyForm)
+                handleInteractivePlanningFlow(sessionId, userId, journeyForm)
                     .collect { emit(it) }
             }
             
@@ -384,7 +401,7 @@ class ChatService(
                 if (partial != null && partial.isComplete()) {
                     val form = buildJourneyFormFromPartial(partial)
                     updateJourneyForm(sessionId, form)
-                    handlePlanningFlow(sessionId, userId, form)
+                    handleInteractivePlanningFlow(sessionId, userId, form)
                         .collect { emit(it) }
                 } else {
                     handleNegotiation(sessionId, userId, request.message, partial)
@@ -398,7 +415,7 @@ class ChatService(
                 if (partial != null && partial.isComplete()) {
                     val form = buildJourneyFormFromPartial(partial)
                     updateJourneyForm(sessionId, form)
-                    handlePlanningFlow(sessionId, userId, form)
+                    handleInteractivePlanningFlow(sessionId, userId, form)
                         .collect { emit(it) }
                 } else {
                     handleNegotiation(sessionId, userId, request.message, partial)

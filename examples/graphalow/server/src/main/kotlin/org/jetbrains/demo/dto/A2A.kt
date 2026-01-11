@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.dto
+package org.jetbrains.demo.dto
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.datetime.LocalDate

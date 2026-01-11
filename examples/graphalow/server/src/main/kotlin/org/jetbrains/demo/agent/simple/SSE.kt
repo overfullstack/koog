@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.chat
+package org.jetbrains.demo.agent.simple
 
 import ai.koog.agents.core.agent.AIAgent
 import ai.koog.agents.core.agent.AIAgentState

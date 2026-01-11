@@ -1,9 +1,10 @@
-package org.jetbrains.demo.agent.a2a
+package org.jetbrains.demo.agent.a2a.agents
 
 import ai.koog.a2a.client.A2AClient
 import ai.koog.a2a.client.UrlAgentCardResolver
 import ai.koog.a2a.model.*
 import ai.koog.a2a.transport.Request
+import ai.koog.a2a.transport.Response
 import ai.koog.a2a.transport.client.jsonrpc.http.HttpJSONRPCClientTransport
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -14,12 +15,13 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.JourneyForm
-import org.jetbrains.demo.agent.dto.PointOfInterest
-import org.jetbrains.demo.agent.dto.ItineraryIdeasResult
-import org.jetbrains.demo.agent.dto.POIResearchRequest
-import org.jetbrains.demo.agent.dto.POIResearchResult
-import org.jetbrains.demo.agent.dto.TravelPlanRequest
-import org.jetbrains.demo.agent.dto.TravelPlanResult
+import org.jetbrains.demo.agent.LogColors
+import org.jetbrains.demo.dto.PointOfInterest
+import org.jetbrains.demo.dto.ItineraryIdeasResult
+import org.jetbrains.demo.dto.POIResearchRequest
+import org.jetbrains.demo.dto.POIResearchResult
+import org.jetbrains.demo.dto.TravelPlanRequest
+import org.jetbrains.demo.dto.TravelPlanResult
 import org.slf4j.LoggerFactory
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -211,7 +213,7 @@ data class A2AAgentEndpoints(
     val planComposerUrl: String
 )
 
-class TravelOrchestratorAgent(
+class TravelAgentsOrchestrator(
     private val endpoints: A2AAgentEndpoints
 ) {
     private val json = Json { 
@@ -588,7 +590,7 @@ class TravelOrchestratorAgent(
     }
 
     private inline fun <reified T> extractArtifact(
-        responses: List<ai.koog.a2a.transport.Response<Event>>,
+        responses: List<Response<Event>>,
         artifactId: String
     ): T {
         val artifacts = mutableMapOf<String, Artifact>()

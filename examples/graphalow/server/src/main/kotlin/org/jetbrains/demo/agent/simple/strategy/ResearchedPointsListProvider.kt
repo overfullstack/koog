@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.chat.strategy
+package org.jetbrains.demo.agent.simple.strategy
 
 import kotlinx.serialization.Serializable
 

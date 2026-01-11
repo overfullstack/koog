@@ -3,6 +3,7 @@ package org.jetbrains.demo.agent.a2a
 import ai.koog.agents.features.opentelemetry.attribute.CustomAttribute
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetryConfig
 import ai.koog.agents.features.opentelemetry.integration.langfuse.addLangfuseExporter
+import org.jetbrains.demo.agent.LogColors
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2ATelemetry")

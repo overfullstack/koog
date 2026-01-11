@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.chat.strategy
+package org.jetbrains.demo.agent.simple.strategy
 
 import ai.koog.agents.core.agent.context.agentInput
 import ai.koog.agents.core.dsl.builder.forwardTo
@@ -9,10 +9,10 @@ import ai.koog.agents.ext.agent.subgraphWithTask
 import ai.koog.prompt.markdown.markdown
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.agent.dto.PointOfInterest
-import org.jetbrains.demo.agent.dto.PointOfInterestFindings
-import org.jetbrains.demo.agent.chat.parallel
-import org.jetbrains.demo.agent.tools.Tools
+import org.jetbrains.demo.dto.PointOfInterest
+import org.jetbrains.demo.dto.PointOfInterestFindings
+import org.jetbrains.demo.agent.simple.parallel
+import org.jetbrains.demo.tools.Tools
 
 private val IMAGE_WIDTH = 400
 private val WORD_COUNT = 200

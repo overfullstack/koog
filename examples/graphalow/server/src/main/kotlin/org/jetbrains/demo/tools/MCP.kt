@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.tools
+package org.jetbrains.demo.tools
 
 import ai.koog.agents.core.agent.entity.ToolSelectionStrategy
 import ai.koog.agents.core.tools.ToolDescriptor

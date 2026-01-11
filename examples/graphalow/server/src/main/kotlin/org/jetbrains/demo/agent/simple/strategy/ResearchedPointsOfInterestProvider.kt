@@ -1,9 +1,9 @@
-package org.jetbrains.demo.agent.chat.strategy
+package org.jetbrains.demo.agent.simple.strategy
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
-import org.jetbrains.demo.agent.dto.InternetResource
-import org.jetbrains.demo.agent.dto.PointOfInterest
+import org.jetbrains.demo.dto.InternetResource
+import org.jetbrains.demo.dto.PointOfInterest
 
 @Serializable
 data class ResearchedPointOfInterest(
@@ -14,7 +14,7 @@ data class ResearchedPointOfInterest(
     val imageLinks: List<InternetResource>
 ) {
     fun toDomain() =
-        org.jetbrains.demo.agent.dto.ResearchedPointOfInterest(pointOfInterest, research, links, imageLinks)
+        org.jetbrains.demo.dto.ResearchedPointOfInterest(pointOfInterest, research, links, imageLinks)
 }
 
 val ResearchedPointOfInterestProvider = SubgraphResultProvider<ResearchedPointOfInterest>(
