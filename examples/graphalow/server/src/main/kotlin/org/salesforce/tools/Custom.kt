@@ -1,4 +1,4 @@
-package org.salesforce.travel.tools
+package org.salesforce.tools
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.agents.core.tools.annotations.Tool

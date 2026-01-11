@@ -1,4 +1,4 @@
-package org.salesforce.travel.agent.a2a
+package org.salesforce.swara.a2a
 
 import ai.koog.prompt.executor.clients.anthropic.AnthropicClientSettings
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
@@ -13,6 +13,7 @@ import org.salesforce.tools.Tools
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.prompt.executor.clients.google.GoogleClientSettings
+import org.jetbrains.demo.agent.a2a.APPOINTMENT_BOOKING_PATH
 import org.salesforce.travel.agent.a2a.agents.PLAN_COMPOSER_PATH
 import org.salesforce.travel.agent.a2a.agents.POI_RESEARCHER_PATH
 import org.salesforce.travel.agent.a2a.agents.ROUTE_PLANNER_PATH
@@ -25,9 +26,7 @@ fun main() = runBlocking {
 
     val config = A2AConfig(
         baseUrl = System.getenv("A2A_BASE_URL") ?: "http://localhost",
-        routePlannerPort = System.getenv("ROUTE_PLANNER_PORT")?.toIntOrNull() ?: 9101,
-        poiResearcherPort = System.getenv("POI_RESEARCHER_PORT")?.toIntOrNull() ?: 9102,
-        planComposerPort = System.getenv("PLAN_COMPOSER_PORT")?.toIntOrNull() ?: 9103
+        appointmentBookingPort = System.getenv("APPOINTMENT_BOOKING_PORT")?.toIntOrNull() ?: 9101
     )
 
     val promptExecutor = createPromptExecutor()
@@ -38,10 +37,7 @@ fun main() = runBlocking {
 
     logger.info("A2A Mesh servers started successfully!")
     logger.info("Endpoints:")
-    logger.info("  Route Planner:  ${config.baseUrl}:${config.routePlannerPort}${ROUTE_PLANNER_PATH}")
-    logger.info("  POI Researcher: ${config.baseUrl}:${config.poiResearcherPort}${POI_RESEARCHER_PATH}")
-    logger.info("  Plan Composer:  ${config.baseUrl}:${config.planComposerPort}${PLAN_COMPOSER_PATH}")
-
+    logger.info("  Appointment Booking: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH")
     // Keep the main thread alive
     while (true) {
         delay(Long.MAX_VALUE)

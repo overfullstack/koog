@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.salesforce.travel.JourneyForm
-import org.salesforce.travel.agent.LogColors
+import org.salesforce.LogColors
 import org.salesforce.travel.dto.PointOfInterest
 import org.salesforce.travel.dto.ItineraryIdeasResult
 import org.salesforce.travel.dto.POIResearchRequest

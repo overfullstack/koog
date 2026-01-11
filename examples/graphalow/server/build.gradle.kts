@@ -31,6 +31,12 @@ kotlin {
 }
 
 dependencies {
+    api(platform(libs.http4k.bom))
+    api(libs.bundles.http4k)
+    implementation(fileTree(mapOf("dir" to "jar", "include" to listOf("*.jar"))))
+    api(libs.java.vavr)
+    api(libs.kotlin.vavr)
+    api(libs.arrow.core)
     implementation(libs.ktor.server.websockets)
     implementation(libs.logback)
     

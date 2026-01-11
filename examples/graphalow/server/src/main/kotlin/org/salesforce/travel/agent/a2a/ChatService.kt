@@ -16,7 +16,7 @@ import org.salesforce.travel.JourneyForm
 import org.salesforce.travel.LLM_MODEL
 import org.salesforce.travel.TransportType
 import org.salesforce.travel.Traveler
-import org.salesforce.travel.agent.LogColors
+import org.salesforce.LogColors
 import org.salesforce.travel.agent.a2a.agents.InteractivePlanningEvent
 import org.salesforce.travel.agent.a2a.agents.InteractivePlanningState
 import org.salesforce.travel.agent.a2a.agents.POIOption

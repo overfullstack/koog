@@ -12,7 +12,7 @@ import org.salesforce.travel.LLM_MODEL
 import org.salesforce.travel.agent.simple.parallel
 import org.salesforce.travel.dto.PointOfInterest
 import org.salesforce.travel.dto.PointOfInterestFindings
-import org.salesforce.travel.tools.Tools
+import org.salesforce.tools.Tools
 
 private val IMAGE_WIDTH = 400
 private val WORD_COUNT = 200

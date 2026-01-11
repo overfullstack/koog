@@ -38,7 +38,7 @@ import org.salesforce.travel.agent.simple.strategy.ProposedTravelPlanProvider
 import org.salesforce.travel.agent.simple.strategy.ResearchedPointOfInterest
 import org.salesforce.travel.agent.simple.strategy.ResearchedPointOfInterestProvider
 import org.salesforce.travel.agent.simple.strategy.planner
-import org.salesforce.travel.tools.tools
+import org.salesforce.tools.tools
 import org.slf4j.LoggerFactory
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi

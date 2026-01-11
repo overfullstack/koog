@@ -1,4 +1,4 @@
-package org.salesforce.travel.agent.a2a
+package org.salesforce.swara.chat
 
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.salesforce.travel.JourneyForm
+import org.jetbrains.demo.agent.a2a.model.AppointmentForm
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("ChatRoutes")
@@ -93,7 +93,7 @@ fun Application.chatRoutes(chatService: ChatService) {
                         .collect()
                     
                     if (lastEvent != null) {
-                        call.respond(HttpStatusCode.OK, lastEvent)
+                        call.respond(HttpStatusCode.OK, lastEvent!!)
                     } else {
                         call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "No response generated"))
                     }
@@ -111,12 +111,12 @@ fun Application.chatRoutes(chatService: ChatService) {
                         data = """{"error": "Missing message parameter"}"""
                     ))
                 
-                val journeyFormJson = call.request.queryParameters["journeyForm"]
-                val journeyForm = journeyFormJson?.let { 
+                val appointmentFormJson = call.request.queryParameters["appointmentForm"]
+                val appointmentForm = appointmentFormJson?.let { 
                     try {
-                        json.decodeFromString<JourneyForm>(it)
+                        json.decodeFromString<AppointmentForm>(it)
                     } catch (e: Exception) {
-                        logger.warn("Failed to parse journeyForm: ${e.message}")
+                        logger.warn("Failed to parse appointmentForm: ${e.message}")
                         null
                     }
                 }
@@ -124,7 +124,7 @@ fun Application.chatRoutes(chatService: ChatService) {
                 val request = ChatRequest(
                     sessionId = sessionId,
                     message = message,
-                    journeyForm = journeyForm
+                    appointmentForm = appointmentForm
                 )
 
                 logger.info("SSE chat stream started for session: $sessionId")
@@ -152,11 +152,13 @@ fun Application.chatRoutes(chatService: ChatService) {
                 
                 logger.info("WebSocket connected for session: $sessionId")
                 
-                send(Frame.Text(json.encodeToString(ChatStreamEvent.serializer(), ChatStreamEvent(
-                    sessionId = sessionId,
-                    type = "connected",
-                    content = "Connected to chat session"
-                ))))
+                send(Frame.Text(json.encodeToString(
+                    ChatStreamEvent.serializer(), ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "connected",
+                        content = "Connected to chat session"
+                    )
+                )))
 
                 try {
                     for (frame in incoming) {
@@ -179,11 +181,13 @@ fun Application.chatRoutes(chatService: ChatService) {
                                     }
                                     .catch { e ->
                                         logger.error("Error in WebSocket chat", e)
-                                        send(Frame.Text(json.encodeToString(ChatStreamEvent.serializer(), ChatStreamEvent(
-                                            sessionId = sessionId,
-                                            type = "error",
-                                            content = e.message
-                                        ))))
+                                        send(Frame.Text(json.encodeToString(
+                                            ChatStreamEvent.serializer(), ChatStreamEvent(
+                                                sessionId = sessionId,
+                                                type = "error",
+                                                content = e.message
+                                            )
+                                        )))
                                     }
                                     .collect()
                             }
