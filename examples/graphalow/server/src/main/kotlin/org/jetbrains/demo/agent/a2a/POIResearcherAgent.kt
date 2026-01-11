@@ -127,7 +127,7 @@ private fun poiResearcherAgent(
                 - Practical visitor information
                 - High-quality images that showcase the location
                 
-                Use web search tools to find accurate, up-to-date information.
+                Use Tavily MCP tools to find accurate, up-to-date information.
                 """.trimIndent()
             }
         },

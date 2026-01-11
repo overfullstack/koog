@@ -131,7 +131,7 @@ private fun planComposerAgent(
                 - Include relevant images and links
                 - Provide practical routing information
                 
-                Use mapping and weather tools to verify distances and conditions.
+                Use google-maps mcp tools and openweather mcp tools to verify distances and conditions.
                 """.trimIndent()
             }
         },
