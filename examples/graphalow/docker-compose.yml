@@ -26,7 +26,7 @@ services:
       clickhouse:
         condition: service_healthy
     ports:
-      - 127.0.0.1:3030:3030
+      - "127.0.0.1:3030:3030"
     environment: &langfuse-worker-env
       NEXTAUTH_URL: http://localhost:3000
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres # CHANGEME
@@ -106,8 +106,8 @@ services:
       - langfuse_clickhouse_data:/var/lib/clickhouse
       - langfuse_clickhouse_logs:/var/log/clickhouse-server
     ports:
-      - 127.0.0.1:8123:8123
-      - 127.0.0.1:9002:9000
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9002:9000"
     healthcheck:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 5s
@@ -125,8 +125,8 @@ services:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniosecret # CHANGEME
     ports:
-      - 9090:9000
-      - 127.0.0.1:9091:9001
+      - "9090:9000"
+      - "127.0.0.1:9091:9001"
     volumes:
       - langfuse_minio_data:/data
     healthcheck:
@@ -143,7 +143,7 @@ services:
     command: >
       --requirepass ${REDIS_AUTH:-myredissecret}
     ports:
-      - 127.0.0.1:6379:6379
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -164,7 +164,7 @@ services:
       POSTGRES_DB: postgres
       PGDATA: /var/lib/postgresql/langfuse/data
     ports:
-      - 5432:5432
+      - "5432:5432"
     volumes:
       - langfuse_postgres_data:/var/lib/postgresql/langfuse/data
 
@@ -178,12 +178,13 @@ services:
       - "./mcp-entrypoint.sh:/mcp-entrypoint.sh:ro"
     entrypoint: ["/bin/sh", "/mcp-entrypoint.sh"]
     environment:
-      - GOOGLE_MAPS_API_KEY
-      - TAVILY_API_TOKEN
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+      TAVILY_API_KEY: ${TAVILY_API_TOKEN}
+      OPEN_WEATHER_API_KEY: ${OPEN_WEATHER_API_KEY}
     command:
       - --verbose
       - --transport=sse
-      - --servers=google-maps-comprehensive,tavily
+      - --servers=google-maps-comprehensive,tavily,openweather
       - --port=9011
       - --secrets=/.mcp-secrets.env
 

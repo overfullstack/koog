@@ -141,7 +141,6 @@ private fun planComposerAgent(
 
     val toolRegistry = ToolRegistry {
         tools(tools.mcpTools.tools)
-        tools(tools.weatherTool)
     }
 
     return GraphAIAgent(

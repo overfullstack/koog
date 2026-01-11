@@ -7,15 +7,9 @@ import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
 import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLMProvider
-import io.ktor.client.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import org.jetbrains.demo.agent.tools.Tools
-import org.jetbrains.demo.agent.tools.WeatherTool
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.prompt.executor.clients.google.GoogleClientSettings
@@ -84,19 +78,6 @@ private fun createPromptExecutor(): MultiLLMPromptExecutor {
 }
 
 private suspend fun createTools(): Tools {
-    val httpClient = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(Json {
-                prettyPrint = false
-                isLenient = true
-                encodeDefaults = true
-                ignoreUnknownKeys = true
-                allowSpecialFloatingPointValues = true
-            })
-        }
-    }
-
-    val weatherApiUrl = System.getenv("WEATHER_API_URL") ?: "https://api.weatherapi.com/v1"
     val mcpServerUrl = System.getenv("MCP_SERVER_URL") ?: "http://localhost:9011"
 
     val mcpTools = try {
@@ -106,10 +87,5 @@ private suspend fun createTools(): Tools {
         ToolRegistry.EMPTY
     }
 
-    val weatherTool = WeatherTool(httpClient, weatherApiUrl)
-
-    return Tools(
-        weatherTool = weatherTool,
-        mcpTools = mcpTools
-    )
+    return Tools(mcpTools = mcpTools)
 }
