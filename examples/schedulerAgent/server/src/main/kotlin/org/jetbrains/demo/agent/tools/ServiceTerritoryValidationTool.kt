@@ -8,30 +8,28 @@ import com.salesforce.revoman.input.config.Kick
 import com.salesforce.revoman.input.config.StepPick.PostTxnStepPick.PickUtils.afterStepContainingHeader
 import com.salesforce.revoman.output.ExeType
 import org.slf4j.LoggerFactory
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 
-object AppointmentValidationUtils {
+object ServiceTerritoryValidationUtils {
     const val IGNORE_HTTP_STATUS_UNSUCCESSFUL = "ignoreHTTPStatusUnsuccessful"
     val WAIT_HOOK = com.salesforce.revoman.input.config.HookConfig.Companion.post(
         afterStepContainingHeader("isAsync")
     ) { _, _ -> Thread.sleep(7000) }
 }
 
-class AppointmentValidationTool : ToolSet {
-    private val logger = LoggerFactory.getLogger(AppointmentValidationTool::class.java)
+class ServiceTerritoryValidationTool : ToolSet {
+    private val logger = LoggerFactory.getLogger(ServiceTerritoryValidationTool::class.java)
     val dynamicEnv = mutableMapOf<String, String>()
 
     @Tool
-    @LLMDescription("Returns a list of available work type groups. Used to validate if a work type group name matches any existing ones.")
-    fun validateWorkTypeGroup(
-        @LLMDescription("The work type group name to validate (e.g., 'blood test')")
-        workTypeGroupName: String
+    @LLMDescription("Returns a list of available service territories. Used to validate if a service territory/location name matches any existing ones.")
+    fun validateServiceTerritory(
+        @LLMDescription("The service territory/location name to validate (e.g., 'San Francisco')")
+        location: String
     ): String {
-        logger.info("Fetching work type groups for validation. Requested name: $workTypeGroupName")
+        logger.info("Fetching service territories for validation. Requested location: $location")
         
         try {
-            val pmCollectionPaths = "scheduler-e2e/Validate_WorkType_AppointmentType.json"
+            val pmCollectionPaths = "scheduler-e2e/Validate_ServiceTerritory.json"
             val pmEnvironmentPaths = listOf("scheduler-e2e/Scheduler_Test_Env.json")
             
             // Verify files exist
@@ -51,7 +49,7 @@ class AppointmentValidationTool : ToolSet {
             logger.info("Postman collection path: $pmCollectionPaths")
             logger.info("Postman environment path: ${pmEnvironmentPaths.first()}")
 
-            // Note: We don't need to set workTypeGroupID in dynamicEnv since we're just fetching all work type groups
+            // Note: We don't need to set serviceTerritoryId in dynamicEnv since we're just fetching all service territories
             // The validation will be done by matching the name against the returned list
 
             // Get the js directory path - prefer directories that have node_modules
@@ -100,10 +98,10 @@ class AppointmentValidationTool : ToolSet {
                     .environmentPaths(pmEnvironmentPaths)
                     .haltOnFailureOfTypeExcept(
                         ExeType.HTTP_STATUS,
-                        afterStepContainingHeader(AppointmentValidationUtils.IGNORE_HTTP_STATUS_UNSUCCESSFUL),
+                        afterStepContainingHeader(ServiceTerritoryValidationUtils.IGNORE_HTTP_STATUS_UNSUCCESSFUL),
                     )
                     .hooks(
-                        AppointmentValidationUtils.WAIT_HOOK,
+                        ServiceTerritoryValidationUtils.WAIT_HOOK,
                     )
                     .nodeModulesPath(jsPath)
                     .off()
@@ -114,19 +112,52 @@ class AppointmentValidationTool : ToolSet {
             
             // Extract the actual HTTP response body from the step report
             val response = try {
-                val responseBody = lastStep.responseInfo?.get()?.httpMsg?.body?.toString()
+                // responseInfo is an Either type, need to handle it properly
+                val responseBody = lastStep.responseInfo?.fold(
+                    { error ->
+                        logger.warn("Response info is Left (error): $error")
+                        null
+                    },
+                    { success ->
+                        success?.httpMsg?.body?.toString()
+                    }
+                )
+                
                 if (responseBody.isNullOrBlank()) {
-                    logger.warn("Response body is null or blank, trying toString() on step report")
-                    // Fallback to toString() if body extraction fails
-                    lastStep.toString() ?: "{\"error\": \"No response from validation API\"}"
+                    logger.warn("Response body is null or blank, trying to extract from step report")
+                    // Try to get the response from the step report in a different way
+                    // Look for the actual response in the step report
+                    val stepString = lastStep.toString()
+                    // Try to find JSON in the step string
+                    val jsonStart = stepString.indexOf('{')
+                    val jsonEnd = stepString.lastIndexOf('}') + 1
+                    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                        val extractedJson = stepString.substring(jsonStart, jsonEnd)
+                        logger.info("Extracted JSON from step report: ${extractedJson.take(500)}")
+                        extractedJson
+                    } else {
+                        logger.warn("No JSON found in step report, returning error")
+                        "{\"error\": \"No response from validation API\"}"
+                    }
                 } else {
                     logger.info("Extracted response body: ${responseBody.take(500)}")
                     responseBody
                 }
             } catch (e: Exception) {
                 logger.error("Error extracting response body: ${e.message}", e)
-                // Fallback to toString() if extraction fails
-                lastStep.toString() ?: "{\"error\": \"No response from validation API\"}"
+                // Try to extract JSON from the step report as last resort
+                try {
+                    val stepString = lastStep.toString()
+                    val jsonStart = stepString.indexOf('{')
+                    val jsonEnd = stepString.lastIndexOf('}') + 1
+                    if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                        stepString.substring(jsonStart, jsonEnd)
+                    } else {
+                        "{\"error\": \"No response from validation API: ${e.message}\"}"
+                    }
+                } catch (e2: Exception) {
+                    "{\"error\": \"Failed to extract response: ${e.message}\"}"
+                }
             }
             
             logger.info("Validation response (first 500 chars): ${response.take(500)}")

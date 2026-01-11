@@ -42,6 +42,8 @@ object LogColors {
     val LOCATION_WEATHER = "$BOLD$CYAN[LOCATION_WEATHER]$RESET"
     val APPOINTMENT_BOOKING = "$BOLD$MAGENTA[APPOINTMENT_BOOKING]$RESET"
     val VALIDATION = "$BOLD$YELLOW[VALIDATION]$RESET"
+    val SERVICE_TERRITORY = "$BOLD$BRIGHT_BLUE[SERVICE_TERRITORY]$RESET"
+    val TIMESLOT = "$BOLD$BRIGHT_GREEN[TIMESLOT]$RESET"
     val LLM = "$BRIGHT_RED[LLM]$RESET"
     val SERVER = "$BOLD$WHITE[SERVER]$RESET"
     val USER_INPUT = "$BOLD$BG_GREEN$BLACK[USER_INPUT]$RESET"
@@ -64,6 +66,8 @@ object LogColors {
     fun locationWeatherBanner(text: String): String = "$BOLD$CYAN========== $text ==========$RESET"
     fun appointmentBookingBanner(text: String): String = "$BOLD$MAGENTA========== $text ==========$RESET"
     fun validationBanner(text: String): String = "$BOLD$YELLOW========== $text ==========$RESET"
+    fun serviceTerritoryBanner(text: String): String = "$BOLD$BRIGHT_BLUE========== $text ==========$RESET"
+    fun timeslotBanner(text: String): String = "$BOLD$BRIGHT_GREEN========== $text ==========$RESET"
     fun serverBanner(text: String): String = "$BOLD$WHITE========== $text ==========$RESET"
     fun chatBanner(text: String): String = "$BOLD$BRIGHT_CYAN========== $text ==========$RESET"
 }

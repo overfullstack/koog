@@ -172,6 +172,7 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
         logger.info("${LogColors.APPOINTMENT_BOOKING} ${LogColors.LLM} Generating confirmation message...")
         val appointment = request.appointmentForm
         val weatherInfo = request.weatherInfo
+        val workTypeGroupId = request.workTypeGroupId
         
         // Use LLM to generate a professional confirmation message
         val result = llm.writeSession {
@@ -180,7 +181,8 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
                     markdown {
                         header(1, "Generate Appointment Confirmation")
                         bulleted {
-                            item("Appointment Type: ${appointment.appointmentGroup.name.replace("_", " ")}")
+                            item("Appointment Type: ${appointment.appointmentGroup}")
+                            workTypeGroupId?.let { item("Work Type Group ID: $it") }
                             item("Location: ${appointment.location}")
                             item("Date & Time: ${appointment.appointmentTime}")
                             appointment.patientName?.let { item("Patient: $it") }
@@ -199,6 +201,7 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
                         bulleted {
                             item("Generate a professional, friendly confirmation message")
                             item("Include all appointment details")
+                            item("Include the Work Type Group ID if provided")
                             item("Include weather information and travel advice if available")
                             item("Add appointment ID: APT-${Uuid.random().toString().take(8).uppercase()}")
                             item("Include reminders about arriving early and cancellation policy")

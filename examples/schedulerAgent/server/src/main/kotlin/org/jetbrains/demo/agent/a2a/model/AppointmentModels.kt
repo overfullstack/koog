@@ -5,21 +5,9 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class AppointmentGroup {
-    BLOOD_TEST,
-    DIAGNOSTIC_SCAN,
-    X_RAY,
-    ULTRASOUND,
-    MRI,
-    CT_SCAN,
-    PHYSICAL_EXAM,
-    CONSULTATION
-}
-
-@Serializable
 data class AppointmentForm(
-    @property:LLMDescription("Type of appointment (e.g., blood test, diagnostic scan)")
-    val appointmentGroup: AppointmentGroup,
+    @property:LLMDescription("Type of appointment")
+    val appointmentGroup: String,
     @property:LLMDescription("Location/address of the appointment")
     val location: String,
     @property:LLMDescription("Date and time of the appointment")
@@ -53,7 +41,8 @@ data class LocationWeatherResult(
 @Serializable
 data class AppointmentBookingRequest(
     val appointmentForm: AppointmentForm,
-    val weatherInfo: LocationWeatherResult?
+    val weatherInfo: LocationWeatherResult?,
+    val workTypeGroupId: String? = null
 )
 
 @Serializable
@@ -78,17 +67,57 @@ data class AppointmentResult(
 
 @Serializable
 data class AppointmentValidationRequest(
-    @property:LLMDescription("The work type group ID to validate")
-    val workTypeGroupId: String,
-    @property:LLMDescription("The appointment type to validate")
-    val appointmentType: String
+    @property:LLMDescription("The work type group name to validate (e.g., 'blood test')")
+    val workTypeGroupName: String
 )
 
 @Serializable
 data class AppointmentValidationResult(
-    @property:LLMDescription("Whether the work type group and appointment type combination is valid")
+    @property:LLMDescription("Whether the work type group is valid")
     val isValid: Boolean,
     @property:LLMDescription("Validation message explaining the result")
-    val message: String
+    val message: String,
+    @property:LLMDescription("The work type group ID of the matching work type group, if found")
+    val workTypeGroupId: String? = null
+)
+
+@Serializable
+data class ServiceTerritoryValidationRequest(
+    @property:LLMDescription("The service territory/location name to validate (e.g., 'San Francisco')")
+    val location: String
+)
+
+@Serializable
+data class ServiceTerritoryValidationResult(
+    @property:LLMDescription("Whether the service territory/location is valid")
+    val isValid: Boolean,
+    @property:LLMDescription("Validation message explaining the result")
+    val message: String,
+    @property:LLMDescription("The service territory ID of the matching service territory, if found")
+    val serviceTerritoryId: String? = null
+)
+
+@Serializable
+data class TimeslotValidationRequest(
+    @property:LLMDescription("The appointment time to validate")
+    val appointmentTime: LocalDateTime,
+    @property:LLMDescription("The service territory ID (from service territory validation)")
+    val serviceTerritoryId: String,
+    @property:LLMDescription("The work type group ID (from work type group validation)")
+    val workTypeGroupId: String
+)
+
+@Serializable
+data class TimeslotValidationResult(
+    @property:LLMDescription("Whether the timeslot is valid")
+    val isValid: Boolean,
+    @property:LLMDescription("Validation message explaining the result")
+    val message: String,
+    @property:LLMDescription("The timeslot ID if a valid timeslot is found")
+    val timeslotId: String? = null,
+    @property:LLMDescription("The start time of the validated timeslot")
+    val startTime: LocalDateTime? = null,
+    @property:LLMDescription("The end time of the validated timeslot")
+    val endTime: LocalDateTime? = null
 )
 

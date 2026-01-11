@@ -19,6 +19,8 @@ data class A2AConfig(
     val baseUrl: String,
     val locationWeatherPort: Int = 9101,
     val appointmentValidationPort: Int = 9103,
+    val serviceTerritoryValidationPort: Int = 9104,
+    val timeslotValidationPort: Int = 9105,
     val appointmentBookingPort: Int = 9102
 )
 
@@ -35,20 +37,28 @@ class A2AMeshServer(
         logger.info("${LogColors.SERVER} Configured ports:")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.locationWeatherPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.appointmentValidationPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Service Territory Validation")}: ${config.serviceTerritoryValidationPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Timeslot Validation")}: ${config.timeslotValidationPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.appointmentBookingPort}")
 
         scope.launch { startLocationWeatherServer() }
         scope.launch { startAppointmentValidationServer() }
+        scope.launch { startServiceTerritoryValidationServer() }
+        scope.launch { startTimeslotValidationServer() }
         scope.launch { startAppointmentBookingServer() }
 
         logger.info(LogColors.serverBanner("A2A SCHEDULER SERVER STARTED"))
         logger.info("${LogColors.SERVER} Endpoints available:")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.baseUrl}:${config.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Service Territory Validation")}: ${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Timeslot Validation")}: ${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH")
         logger.info("${LogColors.SERVER} Agent cards available at:")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.baseUrl}:${config.appointmentValidationPort}$APPOINTMENT_VALIDATION_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Service Territory Validation")}: ${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Timeslot Validation")}: ${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_CARD_PATH")
     }
 
@@ -98,6 +108,52 @@ class A2AMeshServer(
         logger.info("${LogColors.VALIDATION} Server started successfully")
     }
 
+    private suspend fun startServiceTerritoryValidationServer() {
+        logger.info("${LogColors.SERVICE_TERRITORY} Server initializing...")
+        val agentCard = serviceTerritoryValidationAgentCard("${config.baseUrl}:${config.serviceTerritoryValidationPort}")
+        val agentExecutor = ServiceTerritoryValidationAgentExecutor(promptExecutor)
+        val a2aServer = A2AServer(
+            agentExecutor = agentExecutor,
+            agentCard = agentCard,
+        )
+
+        val serverTransport = HttpJSONRPCServerTransport(a2aServer)
+        logger.info("${LogColors.SERVICE_TERRITORY} Server starting on port ${config.serviceTerritoryValidationPort}")
+
+        serverTransport.start(
+            engineFactory = CIO,
+            port = config.serviceTerritoryValidationPort,
+            path = SERVICE_TERRITORY_VALIDATION_PATH,
+            wait = false,
+            agentCard = agentCard,
+            agentCardPath = SERVICE_TERRITORY_VALIDATION_CARD_PATH
+        )
+        logger.info("${LogColors.SERVICE_TERRITORY} Server started successfully")
+    }
+
+    private suspend fun startTimeslotValidationServer() {
+        logger.info("${LogColors.TIMESLOT} Server initializing...")
+        val agentCard = timeslotValidationAgentCard("${config.baseUrl}:${config.timeslotValidationPort}")
+        val agentExecutor = TimeslotValidationAgentExecutor(promptExecutor)
+        val a2aServer = A2AServer(
+            agentExecutor = agentExecutor,
+            agentCard = agentCard,
+        )
+
+        val serverTransport = HttpJSONRPCServerTransport(a2aServer)
+        logger.info("${LogColors.TIMESLOT} Server starting on port ${config.timeslotValidationPort}")
+
+        serverTransport.start(
+            engineFactory = CIO,
+            port = config.timeslotValidationPort,
+            path = TIMESLOT_VALIDATION_PATH,
+            wait = false,
+            agentCard = agentCard,
+            agentCardPath = TIMESLOT_VALIDATION_CARD_PATH
+        )
+        logger.info("${LogColors.TIMESLOT} Server started successfully")
+    }
+
     private suspend fun startAppointmentBookingServer() {
         logger.info("${LogColors.APPOINTMENT_BOOKING} Server initializing...")
         val agentCard = appointmentBookingAgentCard("${config.baseUrl}:${config.appointmentBookingPort}")
@@ -124,6 +180,8 @@ class A2AMeshServer(
     fun getEndpoints(): A2ASchedulerEndpoints = A2ASchedulerEndpoints(
         locationWeatherUrl = "${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH",
         appointmentValidationUrl = "${config.baseUrl}:${config.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH",
+        serviceTerritoryValidationUrl = "${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
+        timeslotValidationUrl = "${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
         appointmentBookingUrl = "${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
     )
 }

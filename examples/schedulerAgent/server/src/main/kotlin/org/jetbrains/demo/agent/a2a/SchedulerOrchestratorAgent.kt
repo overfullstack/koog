@@ -47,6 +47,28 @@ sealed class AppointmentProgress {
         val durationMs: Long
     ) : AppointmentProgress()
     
+    /** Validating service territory */
+    @kotlinx.serialization.Serializable
+    data object ValidatingServiceTerritory : AppointmentProgress()
+    
+    /** Service territory validation complete */
+    @kotlinx.serialization.Serializable
+    data class ServiceTerritoryValidationComplete(
+        val validationResult: ServiceTerritoryValidationResult,
+        val durationMs: Long
+    ) : AppointmentProgress()
+    
+    /** Validating timeslot */
+    @kotlinx.serialization.Serializable
+    data object ValidatingTimeslot : AppointmentProgress()
+    
+    /** Timeslot validation complete */
+    @kotlinx.serialization.Serializable
+    data class TimeslotValidationComplete(
+        val validationResult: TimeslotValidationResult,
+        val durationMs: Long
+    ) : AppointmentProgress()
+    
     /** Booking appointment */
     @kotlinx.serialization.Serializable
     data object BookingAppointment : AppointmentProgress()
@@ -66,6 +88,8 @@ sealed class AppointmentProgress {
 data class A2ASchedulerEndpoints(
     val locationWeatherUrl: String,
     val appointmentValidationUrl: String,
+    val serviceTerritoryValidationUrl: String,
+    val timeslotValidationUrl: String,
     val appointmentBookingUrl: String
 )
 
@@ -84,7 +108,7 @@ class SchedulerOrchestratorAgent(
         logger.info("${LogColors.ORCHESTRATOR} Time: ${appointmentForm.appointmentTime}")
 
         // Step 1: Call Location Weather Agent
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/3]")} Calling Location Weather Agent at ${endpoints.locationWeatherUrl}")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/5]")} Calling Location Weather Agent at ${endpoints.locationWeatherUrl}")
         val locationWeatherStart = System.currentTimeMillis()
         val weatherRequest = LocationWeatherRequest(
             location = appointmentForm.location,
@@ -92,43 +116,82 @@ class SchedulerOrchestratorAgent(
         )
         val weatherInfo = callLocationWeatherAgent(weatherRequest)
         val locationWeatherDuration = System.currentTimeMillis() - locationWeatherStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/3]")} Location Weather completed in ${locationWeatherDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/5]")} Location Weather completed in ${locationWeatherDuration}ms")
 
-        // Step 2: Validate Appointment
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Validating Appointment at ${endpoints.appointmentValidationUrl}")
+        // Step 2: Validate Work Type Group
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/5]")} Validating Work Type Group at ${endpoints.appointmentValidationUrl}")
         val validationStart = System.currentTimeMillis()
-        val appointmentTypeName = appointmentForm.appointmentGroup.name.replace("_", " ")
         val validationRequest = AppointmentValidationRequest(
-            workTypeGroupId = appointmentForm.appointmentGroup.name,
-            appointmentType = appointmentTypeName
+            workTypeGroupName = appointmentForm.appointmentGroup
         )
         val validationResult = callAppointmentValidationAgent(validationRequest)
         val validationDuration = System.currentTimeMillis() - validationStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/3]")} Appointment Validation completed in ${validationDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 2/5]")} Work Type Group Validation completed in ${validationDuration}ms")
         
         if (!validationResult.isValid) {
-            val errorMessage = "Appointment validation failed: ${validationResult.message}"
+            val errorMessage = "Work type group validation failed: ${validationResult.message}"
             logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
             throw IllegalStateException(errorMessage)
         }
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Validation passed")}: ${validationResult.message}")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Work type group validation passed")}: ${validationResult.message}")
 
-        // Step 3: Call Appointment Booking Agent
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 3/3]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
+        // Step 3: Validate Service Territory
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/5]")} Validating Service Territory at ${endpoints.serviceTerritoryValidationUrl}")
+        val serviceTerritoryValidationStart = System.currentTimeMillis()
+        val serviceTerritoryValidationRequest = ServiceTerritoryValidationRequest(
+            location = appointmentForm.location
+        )
+        val serviceTerritoryValidationResult = callServiceTerritoryValidationAgent(serviceTerritoryValidationRequest)
+        val serviceTerritoryValidationDuration = System.currentTimeMillis() - serviceTerritoryValidationStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.blue("[STEP 3/5]")} Service Territory Validation completed in ${serviceTerritoryValidationDuration}ms")
+        
+        if (!serviceTerritoryValidationResult.isValid) {
+            val errorMessage = "Service territory validation failed: ${serviceTerritoryValidationResult.message}"
+            logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
+            throw IllegalStateException(errorMessage)
+        }
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Service territory validation passed")}: ${serviceTerritoryValidationResult.message}")
+
+        // Step 4: Validate Timeslot
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("[STEP 4/5]")} Validating Timeslot at ${endpoints.timeslotValidationUrl}")
+        val timeslotValidationStart = System.currentTimeMillis()
+        val timeslotValidationRequest = TimeslotValidationRequest(
+            appointmentTime = appointmentForm.appointmentTime,
+            serviceTerritoryId = serviceTerritoryValidationResult.serviceTerritoryId
+                ?: throw IllegalStateException("Service territory ID is required for timeslot validation"),
+            workTypeGroupId = validationResult.workTypeGroupId
+                ?: throw IllegalStateException("Work type group ID is required for timeslot validation")
+        )
+        val timeslotValidationResult = callTimeslotValidationAgent(timeslotValidationRequest)
+        val timeslotValidationDuration = System.currentTimeMillis() - timeslotValidationStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("[STEP 4/5]")} Timeslot Validation completed in ${timeslotValidationDuration}ms")
+        
+        if (!timeslotValidationResult.isValid) {
+            val errorMessage = "Timeslot validation failed: ${timeslotValidationResult.message}"
+            logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
+            throw IllegalStateException(errorMessage)
+        }
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Timeslot validation passed")}: ${timeslotValidationResult.message}")
+
+        // Step 5: Call Appointment Booking Agent
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 5/5]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
         val bookingStart = System.currentTimeMillis()
         val bookingRequest = AppointmentBookingRequest(
             appointmentForm = appointmentForm,
-            weatherInfo = weatherInfo
+            weatherInfo = weatherInfo,
+            workTypeGroupId = validationResult.workTypeGroupId
         )
         val bookingResult = callAppointmentBookingAgent(bookingRequest)
         val bookingDuration = System.currentTimeMillis() - bookingStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 3/3]")} Appointment Booking completed in ${bookingDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 5/5]")} Appointment Booking completed in ${bookingDuration}ms")
 
-        val totalDuration = locationWeatherDuration + validationDuration + bookingDuration
+        val totalDuration = locationWeatherDuration + validationDuration + serviceTerritoryValidationDuration + timeslotValidationDuration + bookingDuration
         logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE"))
         logger.info("${LogColors.ORCHESTRATOR} Total orchestration time: ${totalDuration}ms")
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.cyan("Location Weather")}: ${locationWeatherDuration}ms")
-        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.yellow("Validation")}: ${validationDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.yellow("Work Type Validation")}: ${validationDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.blue("Service Territory Validation")}: ${serviceTerritoryValidationDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.green("Timeslot Validation")}: ${timeslotValidationDuration}ms")
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.magenta("Appointment Booking")}: ${bookingDuration}ms")
 
         return AppointmentResult(
@@ -146,7 +209,7 @@ class SchedulerOrchestratorAgent(
         val overallStart = System.currentTimeMillis()
         
         emit(AppointmentProgress.Started(
-            appointmentType = appointmentForm.appointmentGroup.name.replace("_", " "),
+            appointmentType = appointmentForm.appointmentGroup,
             location = appointmentForm.location
         ))
         logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION START (Streaming)"))
@@ -165,32 +228,71 @@ class SchedulerOrchestratorAgent(
             emit(AppointmentProgress.LocationWeatherComplete(weatherInfo, locationWeatherDuration))
             logger.info("${LogColors.ORCHESTRATOR} Weather check complete: ${weatherInfo.weather}")
             
-            // Step 2: Validate appointment
+            // Step 2: Validate work type group
             emit(AppointmentProgress.ValidatingAppointment)
             val validationStart = System.currentTimeMillis()
-            val appointmentTypeName = appointmentForm.appointmentGroup.name.replace("_", " ")
             val validationRequest = AppointmentValidationRequest(
-                workTypeGroupId = appointmentForm.appointmentGroup.name,
-                appointmentType = appointmentTypeName
+                workTypeGroupName = appointmentForm.appointmentGroup
             )
             val validationResult = callAppointmentValidationAgent(validationRequest)
             val validationDuration = System.currentTimeMillis() - validationStart
             emit(AppointmentProgress.ValidationComplete(validationResult, validationDuration))
             
             if (!validationResult.isValid) {
-                val errorMessage = "Appointment validation failed: ${validationResult.message}"
+                val errorMessage = "Work type group validation failed: ${validationResult.message}"
                 logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
                 emit(AppointmentProgress.Error(errorMessage))
                 return@flow
             }
-            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Validation passed")}: ${validationResult.message}")
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Work type group validation passed")}: ${validationResult.message}")
             
-            // Step 3: Book appointment
+            // Step 3: Validate service territory
+            emit(AppointmentProgress.ValidatingServiceTerritory)
+            val serviceTerritoryValidationStart = System.currentTimeMillis()
+            val serviceTerritoryValidationRequest = ServiceTerritoryValidationRequest(
+                location = appointmentForm.location
+            )
+            val serviceTerritoryValidationResult = callServiceTerritoryValidationAgent(serviceTerritoryValidationRequest)
+            val serviceTerritoryValidationDuration = System.currentTimeMillis() - serviceTerritoryValidationStart
+            emit(AppointmentProgress.ServiceTerritoryValidationComplete(serviceTerritoryValidationResult, serviceTerritoryValidationDuration))
+            
+            if (!serviceTerritoryValidationResult.isValid) {
+                val errorMessage = "Service territory validation failed: ${serviceTerritoryValidationResult.message}"
+                logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
+                emit(AppointmentProgress.Error(errorMessage))
+                return@flow
+            }
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Service territory validation passed")}: ${serviceTerritoryValidationResult.message}")
+            
+            // Step 4: Validate timeslot
+            emit(AppointmentProgress.ValidatingTimeslot)
+            val timeslotValidationStart = System.currentTimeMillis()
+            val timeslotValidationRequest = TimeslotValidationRequest(
+                appointmentTime = appointmentForm.appointmentTime,
+                serviceTerritoryId = serviceTerritoryValidationResult.serviceTerritoryId
+                    ?: throw IllegalStateException("Service territory ID is required for timeslot validation"),
+                workTypeGroupId = validationResult.workTypeGroupId
+                    ?: throw IllegalStateException("Work type group ID is required for timeslot validation")
+            )
+            val timeslotValidationResult = callTimeslotValidationAgent(timeslotValidationRequest)
+            val timeslotValidationDuration = System.currentTimeMillis() - timeslotValidationStart
+            emit(AppointmentProgress.TimeslotValidationComplete(timeslotValidationResult, timeslotValidationDuration))
+            
+            if (!timeslotValidationResult.isValid) {
+                val errorMessage = "Timeslot validation failed: ${timeslotValidationResult.message}"
+                logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red(errorMessage)}")
+                emit(AppointmentProgress.Error(errorMessage))
+                return@flow
+            }
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Timeslot validation passed")}: ${timeslotValidationResult.message}")
+            
+            // Step 5: Book appointment
             emit(AppointmentProgress.BookingAppointment)
             val bookingStart = System.currentTimeMillis()
             val bookingRequest = AppointmentBookingRequest(
                 appointmentForm = appointmentForm,
-                weatherInfo = weatherInfo
+                weatherInfo = weatherInfo,
+                workTypeGroupId = validationResult.workTypeGroupId
             )
             val bookingResult = callAppointmentBookingAgent(bookingRequest)
             val bookingDuration = System.currentTimeMillis() - bookingStart
@@ -205,7 +307,7 @@ class SchedulerOrchestratorAgent(
             emit(AppointmentProgress.BookingComplete(finalResult, totalDuration))
             
             logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE (Streaming)"))
-            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Weather: ${locationWeatherDuration}ms, Validation: ${validationDuration}ms, Booking: ${bookingDuration}ms)")
+            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Weather: ${locationWeatherDuration}ms, Work Type Validation: ${validationDuration}ms, Service Territory Validation: ${serviceTerritoryValidationDuration}ms, Timeslot Validation: ${timeslotValidationDuration}ms, Booking: ${bookingDuration}ms)")
             
         } catch (e: Exception) {
             logger.error("${LogColors.ORCHESTRATOR} Error during booking: ${e.message}", e)
@@ -264,6 +366,62 @@ class SchedulerOrchestratorAgent(
 
             val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
             return extractArtifact(responses, "appointment-validation")
+        } finally {
+            transport.close()
+        }
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun callServiceTerritoryValidationAgent(request: ServiceTerritoryValidationRequest): ServiceTerritoryValidationResult {
+        val transport = HttpJSONRPCClientTransport(url = endpoints.serviceTerritoryValidationUrl)
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = endpoints.serviceTerritoryValidationUrl.substringBefore(SERVICE_TERRITORY_VALIDATION_PATH),
+            path = SERVICE_TERRITORY_VALIDATION_CARD_PATH
+        )
+        val client = A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+
+        try {
+            client.connect()
+            val contextId = Uuid.random().toString()
+
+            val message = Message(
+                messageId = Uuid.random().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(json.encodeToString(ServiceTerritoryValidationRequest.serializer(), request))),
+                contextId = contextId,
+                taskId = null
+            )
+
+            val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
+            return extractArtifact(responses, "service-territory-validation")
+        } finally {
+            transport.close()
+        }
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun callTimeslotValidationAgent(request: TimeslotValidationRequest): TimeslotValidationResult {
+        val transport = HttpJSONRPCClientTransport(url = endpoints.timeslotValidationUrl)
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = endpoints.timeslotValidationUrl.substringBefore(TIMESLOT_VALIDATION_PATH),
+            path = TIMESLOT_VALIDATION_CARD_PATH
+        )
+        val client = A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+
+        try {
+            client.connect()
+            val contextId = Uuid.random().toString()
+
+            val message = Message(
+                messageId = Uuid.random().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(json.encodeToString(TimeslotValidationRequest.serializer(), request))),
+                contextId = contextId,
+                taskId = null
+            )
+
+            val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
+            return extractArtifact(responses, "timeslot-validation")
         } finally {
             transport.close()
         }

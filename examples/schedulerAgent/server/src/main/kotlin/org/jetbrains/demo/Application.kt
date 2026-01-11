@@ -22,6 +22,8 @@ import org.jetbrains.demo.agent.a2a.a2aSchedulerRoutes
 import org.jetbrains.demo.agent.a2a.chatRoutes
 import org.jetbrains.demo.agent.a2a.LOCATION_WEATHER_PATH
 import org.jetbrains.demo.agent.a2a.APPOINTMENT_VALIDATION_PATH
+import org.jetbrains.demo.agent.a2a.SERVICE_TERRITORY_VALIDATION_PATH
+import org.jetbrains.demo.agent.a2a.TIMESLOT_VALIDATION_PATH
 import org.jetbrains.demo.agent.a2a.APPOINTMENT_BOOKING_PATH
 import kotlin.String
 import kotlin.time.Duration.Companion.seconds
@@ -94,6 +96,8 @@ private fun Application.a2aMesh(config: AppConfig) {
         baseUrl = config.a2aBaseUrl,
         locationWeatherPort = 9101,
         appointmentValidationPort = 9103,
+        serviceTerritoryValidationPort = 9104,
+        timeslotValidationPort = 9105,
         appointmentBookingPort = 9102
     )
 
@@ -103,6 +107,8 @@ private fun Application.a2aMesh(config: AppConfig) {
         A2ASchedulerEndpoints(
             locationWeatherUrl = "${config.a2aBaseUrl}:${a2aConfig.locationWeatherPort}$LOCATION_WEATHER_PATH",
             appointmentValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH",
+            serviceTerritoryValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
+            timeslotValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
             appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
         )
     )

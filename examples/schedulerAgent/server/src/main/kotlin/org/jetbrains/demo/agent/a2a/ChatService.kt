@@ -87,7 +87,7 @@ data class ChatMessage(
  */
 @Serializable
 data class PartialAppointmentInfo(
-    val appointmentGroup: AppointmentGroup? = null,
+    val appointmentGroup: String? = null,
     val location: String? = null,
     val timeOfDay: String? = null,
     val date: String? = null,
@@ -103,7 +103,7 @@ data class PartialAppointmentInfo(
     fun isComplete(): Boolean = appointmentGroup != null && location != null && (timeOfDay != null || date != null)
     
     fun summary(): String = buildString {
-        appointmentGroup?.let { append("**Type:** ${it.name.replace("_", " ")}") }
+        appointmentGroup?.let { append("**Type:** $it") }
         location?.let { append("\n**Location:** $it") }
         date?.let { append("\n**Date:** $it") }
         timeOfDay?.let { append("\n**Time:** $it") }
@@ -185,7 +185,7 @@ class ChatService(
                 - OTHER: Doesn't fit other categories
                 
                 Also extract any appointment details mentioned in the message:
-                - appointmentType: blood test, diagnostic scan, MRI, CT scan, X-ray, ultrasound, physical exam, consultation
+                - appointmentType: type of appointment
                 - location: address or hospital name
                 - time: time of day (morning, afternoon, evening, or specific time)
                 - date: specific date or relative date (tomorrow, next week, etc.)
@@ -412,13 +412,8 @@ class ChatService(
         if (extracted == null) return current ?: PartialAppointmentInfo()
         val base = current ?: PartialAppointmentInfo()
         
-        // Parse appointment type
-        val appointmentGroup = extracted.appointmentType?.let { typeStr ->
-            AppointmentGroup.values().firstOrNull { 
-                it.name.replace("_", " ").equals(typeStr, ignoreCase = true) ||
-                typeStr.contains(it.name.replace("_", " "), ignoreCase = true)
-            }
-        } ?: base.appointmentGroup
+        // Use extracted appointment type directly as string
+        val appointmentGroup = extracted.appointmentType ?: base.appointmentGroup
         
         return base.copy(
             appointmentGroup = appointmentGroup,
@@ -439,7 +434,7 @@ class ChatService(
         appendLine("I can help you book appointments and provide weather information for your visit.")
         appendLine()
         appendLine("To get started, I'll need:")
-        appendLine("• **Appointment type** (blood test, diagnostic scan, MRI, CT scan, X-ray, ultrasound, physical exam, or consultation)")
+                appendLine("• **Appointment type**")
         appendLine("• **Location** (hospital name or address)")
         appendLine("• **Date and time** (e.g., tomorrow at 2 PM, next Monday morning)")
         appendLine()
@@ -498,7 +493,7 @@ class ChatService(
                 
                 appendLine()
                 when (missing.firstOrNull()) {
-                    "appointment type" -> appendLine("What type of appointment? (blood test, diagnostic scan, MRI, CT scan, X-ray, ultrasound, physical exam, or consultation)")
+                    "appointment type" -> appendLine("What type of appointment?")
                     "location" -> appendLine("Where is the appointment? (hospital name or address)")
                     "date and time" -> appendLine("When is the appointment? (e.g., tomorrow at 2 PM, next Monday morning)")
                     else -> appendLine("Please provide the missing information.")
@@ -518,16 +513,10 @@ class ChatService(
         val msgLower = message.lowercase()
         var updated = current
         
-        // Extract appointment type
-        if (updated.appointmentGroup == null) {
-            AppointmentGroup.values().forEach { group ->
-                val groupName = group.name.replace("_", " ").lowercase()
-                if (msgLower.contains(groupName) || msgLower.contains(groupName.replace(" ", ""))) {
-                    updated = updated.copy(appointmentGroup = group)
-                    return@forEach
-                }
-            }
-        }
+        // Extract appointment type - use LLM-extracted value if available, otherwise try simple keyword matching
+        // The LLM classification should handle most cases, but we keep this as a fallback
+        // Common appointment type keywords - these are just hints, the actual extraction
+        // should come from the LLM classification in applyExtractedDetails
         
         // Extract location
         val locationPatterns = listOf("at ", "location ", "hospital ", "address ", "in ")
@@ -594,7 +583,7 @@ class ChatService(
             ?: LocalDateTime(defaultTime.year, defaultTime.monthNumber, defaultTime.dayOfMonth, 14, 0)
         
         return AppointmentForm(
-            appointmentGroup = partial.appointmentGroup ?: AppointmentGroup.CONSULTATION,
+            appointmentGroup = partial.appointmentGroup ?: "Unknown Appointment Type",
             location = partial.location ?: "Unknown Location",
             appointmentTime = appointmentTime,
             patientName = partial.patientName,
@@ -671,7 +660,7 @@ class ChatService(
         logger.info("${LogColors.CHAT} Booking: ${appointmentForm.appointmentGroup} at ${appointmentForm.location}")
         
         val introContent = buildString {
-            appendLine("Great! Let me book your **${appointmentForm.appointmentGroup.name.replace("_", " ")}** appointment.")
+            appendLine("Great! Let me book your **${appointmentForm.appointmentGroup}** appointment.")
             appendLine()
             appendLine("I'll check the location and weather, then send you a confirmation with all the details...")
         }
@@ -705,6 +694,38 @@ class ChatService(
                         sessionId = sessionId, 
                         type = "progress", 
                         content = "✅ Validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingServiceTerritory -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "📍 Validating service territory/location..."
+                    ))
+                }
+                
+                is AppointmentProgress.ServiceTerritoryValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "✅ Service territory validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingTimeslot -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "⏰ Validating timeslot availability..."
+                    ))
+                }
+                
+                is AppointmentProgress.TimeslotValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "✅ Timeslot validation complete: ${progress.validationResult.message}"
                     ))
                 }
                 
@@ -777,8 +798,13 @@ class ChatService(
     
     fun cleanupOldSessions(maxAgeMs: Long = 3600000) {
         val now = System.currentTimeMillis()
-        sessions.entries.removeIf { (_, session) ->
-            now - session.createdAt > maxAgeMs
+        val keysToRemove = mutableListOf<String>()
+        sessions.forEach { entry ->
+            val session = entry.value
+            if ((now - session.createdAt) > maxAgeMs) {
+                keysToRemove.add(entry.key)
+            }
         }
+        keysToRemove.forEach { sessions.remove(it) }
     }
 }
