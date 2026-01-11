@@ -2,8 +2,8 @@ package org.jetbrains.demo.agent.chat.strategy
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
-import org.jetbrains.demo.Day
-import org.jetbrains.demo.InternetResource
+import org.jetbrains.demo.agent.a2a.model.Day
+import org.jetbrains.demo.agent.a2a.model.InternetResource
 
 @Serializable
 data class ProposedTravelPlan(
@@ -21,7 +21,14 @@ data class ProposedTravelPlan(
     val countriesVisited: List<String>,
 ) {
     fun toDomain() =
-        org.jetbrains.demo.ProposedTravelPlan(title, plan, days, imageLinks, pageLinks, countriesVisited)
+        org.jetbrains.demo.agent.a2a.model.ProposedTravelPlan(
+            title,
+            plan,
+            days,
+            imageLinks,
+            pageLinks,
+            countriesVisited
+        )
 }
 
 val ProposedTravelPlanProvider = SubgraphResultProvider<ProposedTravelPlan>(

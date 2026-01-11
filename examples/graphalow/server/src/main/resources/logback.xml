@@ -11,6 +11,4 @@
     <logger name="com.zaxxer.hikari.pool" level="WARN" />
     <logger name="io.ktor" level="TRACE"/>
     <logger name="TravelAgent" level="INFO"/>
-    <logger name="org.jetbrains.demo.agent.tools.DuckDuckGoSearchTool" level="INFO"/>
-    <logger name="org.jetbrains.demo.agent.tools.TavilySearchTool" level="INFO"/>
 </configuration>

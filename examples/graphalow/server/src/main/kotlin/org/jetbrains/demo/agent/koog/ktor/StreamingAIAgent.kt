@@ -13,6 +13,20 @@ import ai.koog.agents.core.feature.model.AIAgentError
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.features.eventHandler.feature.EventHandler
+import ai.koog.agents.core.feature.handler.agent.AgentCompletedContext
+import ai.koog.agents.core.feature.handler.agent.AgentExecutionFailedContext
+import ai.koog.agents.core.feature.handler.agent.AgentStartingContext
+import ai.koog.agents.core.feature.handler.llm.LLMCallCompletedContext
+import ai.koog.agents.core.feature.handler.llm.LLMCallStartingContext
+import ai.koog.agents.core.feature.handler.node.NodeExecutionCompletedContext
+import ai.koog.agents.core.feature.handler.node.NodeExecutionFailedContext
+import ai.koog.agents.core.feature.handler.node.NodeExecutionStartingContext
+import ai.koog.agents.core.feature.handler.strategy.StrategyCompletedContext
+import ai.koog.agents.core.feature.handler.strategy.StrategyStartingContext
+import ai.koog.agents.core.feature.handler.tool.ToolCallCompletedContext
+import ai.koog.agents.core.feature.handler.tool.ToolCallFailedContext
+import ai.koog.agents.core.feature.handler.tool.ToolCallStartingContext
+import ai.koog.agents.core.feature.handler.tool.ToolValidationFailedContext
 import ai.koog.ktor.Koog
 import ai.koog.prompt.dsl.ModerationResult
 import ai.koog.prompt.dsl.Prompt
@@ -263,7 +277,7 @@ class StreamingAIAgent<Input, Output>(
         installFeatures()
         @Suppress("UNCHECKED_CAST")
         install(EventHandler) {
-            onAgentStarting { ctx ->
+            onAgentStarting { ctx: AgentStartingContext ->
                 send(
                     Event.OnBeforeAgentStarted(
                         ctx.agent as AIAgent<Input, Output>,
@@ -272,7 +286,7 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-            onAgentCompleted { ctx ->
+            onAgentCompleted { ctx: AgentCompletedContext ->
                 send(
                     Event.OnAgentFinished(
                         ctx.agentId,
@@ -281,9 +295,9 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-            onAgentExecutionFailed { ctx -> send(Event.OnAgentRunError(ctx.agentId, ctx.runId, ctx.throwable)) }
+            onAgentExecutionFailed { ctx: AgentExecutionFailedContext -> send(Event.OnAgentRunError(ctx.agentId, ctx.runId, ctx.throwable)) }
 
-            onStrategyStarting { ctx ->
+            onStrategyStarting { ctx: StrategyStartingContext ->
                 send(
                     Event.OnStrategyStarted(
                         ctx.context.runId,
@@ -291,7 +305,7 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-            onStrategyCompleted { ctx ->
+            onStrategyCompleted { ctx: StrategyCompletedContext ->
                 send(
                     Event.OnStrategyFinished(
                         ctx.context.runId,
@@ -302,8 +316,8 @@ class StreamingAIAgent<Input, Output>(
                 )
             }
 
-            onNodeExecutionStarting { ctx -> send(Event.OnBeforeNode(ctx.node, ctx.context, ctx.input, ctx.inputType)) }
-            onNodeExecutionCompleted { ctx ->
+            onNodeExecutionStarting { ctx: NodeExecutionStartingContext -> send(Event.OnBeforeNode(ctx.node, ctx.context, ctx.input, ctx.inputType)) }
+            onNodeExecutionCompleted { ctx: NodeExecutionCompletedContext ->
                 send(
                     Event.OnAfterNode(
                         ctx.node,
@@ -315,10 +329,10 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-            onNodeExecutionFailed { ctx -> send(Event.OnNodeExecutionError(ctx.node, ctx.context, ctx.throwable)) }
+            onNodeExecutionFailed { ctx: NodeExecutionFailedContext -> send(Event.OnNodeExecutionError(ctx.node, ctx.context, ctx.throwable)) }
 
-            onLLMCallStarting { ctx -> send(Event.OnBeforeLLMCall(ctx.runId, ctx.prompt, ctx.model, ctx.tools)) }
-            onLLMCallCompleted { ctx ->
+            onLLMCallStarting { ctx: LLMCallStartingContext -> send(Event.OnBeforeLLMCall(ctx.runId, ctx.prompt, ctx.model, ctx.tools)) }
+            onLLMCallCompleted { ctx: LLMCallCompletedContext ->
                 send(
                     Event.OnAfterLLMCall(
                         ctx.runId,
@@ -331,8 +345,8 @@ class StreamingAIAgent<Input, Output>(
                 )
             }
 
-            onToolCallStarting { ctx -> send(Event.OnToolCall(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs)) }
-            onToolValidationFailed { ctx ->
+            onToolCallStarting { ctx: ToolCallStartingContext -> send(Event.OnToolCall(ctx.runId, ctx.toolCallId, ctx.toolName, ctx.toolArgs)) }
+            onToolValidationFailed { ctx: ToolValidationFailedContext ->
                 send(
                     Event.OnToolValidationError(
                         ctx.runId,
@@ -343,7 +357,7 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-            onToolCallFailed { ctx ->
+            onToolCallFailed { ctx: ToolCallFailedContext ->
                 send(
                     Event.OnToolCallFailure(
                         ctx.runId,
@@ -354,7 +368,7 @@ class StreamingAIAgent<Input, Output>(
                     )
                 )
             }
-            onToolCallCompleted { ctx ->
+            onToolCallCompleted { ctx: ToolCallCompletedContext ->
                 send(
                     Event.OnToolCallResult(
                         ctx.runId,
