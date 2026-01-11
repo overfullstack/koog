@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.a2a
+package org.jetbrains.demo.agent.a2a.agents
 
 import ai.koog.a2a.model.*
 import ai.koog.a2a.server.agent.AgentExecutor
@@ -19,8 +19,10 @@ import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.agent.dto.ItineraryIdeasResult
-import org.jetbrains.demo.agent.tools.Tools
+import org.jetbrains.demo.agent.a2a.A2ATelemetry
+import org.jetbrains.demo.agent.LogColors
+import org.jetbrains.demo.dto.ItineraryIdeasResult
+import org.jetbrains.demo.tools.Tools
 import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi

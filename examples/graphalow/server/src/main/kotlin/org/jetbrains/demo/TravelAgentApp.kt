@@ -14,13 +14,13 @@ import io.ktor.server.websocket.pingPeriod
 import io.ktor.server.websocket.timeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.jetbrains.demo.agent.a2a.A2AAgentEndpoints
+import org.jetbrains.demo.agent.a2a.agents.A2AAgentEndpoints
 import org.jetbrains.demo.agent.a2a.A2AConfig
 import org.jetbrains.demo.agent.a2a.ChatService
-import org.jetbrains.demo.agent.a2a.TravelOrchestratorAgent
+import org.jetbrains.demo.agent.a2a.agents.TravelAgentsOrchestrator
 import org.jetbrains.demo.agent.a2a.a2aTravelAgentRoutes
 import org.jetbrains.demo.agent.a2a.chatRoutes
-import org.jetbrains.demo.agent.chat.agent
+import org.jetbrains.demo.agent.simple.agent
 import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
@@ -88,20 +88,20 @@ private fun Application.a2aMesh(config: AppConfig) {
 
     // Create the orchestrator that connects to the A2A agent servers
     // The A2A agent servers must be started separately (see A2AServerLauncher.kt)
-    val orchestrator = TravelOrchestratorAgent(
+    val travelAgentsOrchestrator = TravelAgentsOrchestrator(
         A2AAgentEndpoints(
             routePlannerUrl = "${config.a2aBaseUrl}:${a2aConfig.routePlannerPort}/a2a/route-planner",
             poiResearcherUrl = "${config.a2aBaseUrl}:${a2aConfig.poiResearcherPort}/a2a/poi-researcher",
             planComposerUrl = "${config.a2aBaseUrl}:${a2aConfig.planComposerPort}/a2a/plan-composer"
         )
     )
-    a2aTravelAgentRoutes(orchestrator)
+    a2aTravelAgentRoutes(travelAgentsOrchestrator)
     
     // Chat UI endpoints (Claude-like experience)
-    val koogPlugin = pluginOrNull(ai.koog.ktor.Koog)
+    val koogPlugin = pluginOrNull(Koog)
     val chatService = if (koogPlugin != null) {
         @Suppress("invisible_reference", "invisible_member")
-        ChatService(orchestrator, koogPlugin.promptExecutor)
+        ChatService(travelAgentsOrchestrator, koogPlugin.promptExecutor)
     } else {
         throw IllegalStateException("Koog plugin must be installed before a2aMesh")
     }

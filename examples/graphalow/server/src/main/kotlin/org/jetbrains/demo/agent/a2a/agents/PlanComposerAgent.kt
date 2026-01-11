@@ -1,4 +1,4 @@
-package org.jetbrains.demo.agent.a2a
+package org.jetbrains.demo.agent.a2a.agents
 
 import ai.koog.a2a.model.AgentCapabilities
 import ai.koog.a2a.model.AgentCard
@@ -29,9 +29,11 @@ import ai.koog.prompt.executor.model.PromptExecutor
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.agent.dto.TravelPlanRequest
-import org.jetbrains.demo.agent.dto.TravelPlanResult
-import org.jetbrains.demo.agent.tools.Tools
+import org.jetbrains.demo.agent.a2a.A2ATelemetry
+import org.jetbrains.demo.agent.LogColors
+import org.jetbrains.demo.dto.TravelPlanRequest
+import org.jetbrains.demo.dto.TravelPlanResult
+import org.jetbrains.demo.tools.Tools
 import org.slf4j.LoggerFactory
 import kotlin.reflect.typeOf
 import kotlin.uuid.ExperimentalUuidApi

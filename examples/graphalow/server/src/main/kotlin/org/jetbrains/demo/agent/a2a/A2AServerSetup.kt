@@ -10,7 +10,22 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.jetbrains.demo.agent.tools.Tools
+import org.jetbrains.demo.agent.LogColors
+import org.jetbrains.demo.agent.a2a.agents.A2AAgentEndpoints
+import org.jetbrains.demo.agent.a2a.agents.PLAN_COMPOSER_CARD_PATH
+import org.jetbrains.demo.agent.a2a.agents.PLAN_COMPOSER_PATH
+import org.jetbrains.demo.agent.a2a.agents.POIResearcherAgentExecutor
+import org.jetbrains.demo.agent.a2a.agents.POI_RESEARCHER_CARD_PATH
+import org.jetbrains.demo.agent.a2a.agents.POI_RESEARCHER_PATH
+import org.jetbrains.demo.agent.a2a.agents.PlanComposerAgentExecutor
+import org.jetbrains.demo.agent.a2a.agents.ROUTE_PLANNER_CARD_PATH
+import org.jetbrains.demo.agent.a2a.agents.ROUTE_PLANNER_PATH
+import org.jetbrains.demo.agent.a2a.agents.RoutePlannerAgentExecutor
+import org.jetbrains.demo.agent.a2a.agents.TravelAgentsOrchestrator
+import org.jetbrains.demo.agent.a2a.agents.planComposerAgentCard
+import org.jetbrains.demo.agent.a2a.agents.poiResearcherAgentCard
+import org.jetbrains.demo.agent.a2a.agents.routePlannerAgentCard
+import org.jetbrains.demo.tools.Tools
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2AServerSetup")
@@ -43,13 +58,13 @@ class A2AMeshServer(
 
         logger.info(LogColors.serverBanner("A2A MESH SERVER STARTED"))
         logger.info("${LogColors.SERVER} Endpoints available:")
-        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_PATH")
-        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_PATH")
-        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.baseUrl}:${config.routePlannerPort}${ROUTE_PLANNER_PATH}")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.baseUrl}:${config.poiResearcherPort}${POI_RESEARCHER_PATH}")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.baseUrl}:${config.planComposerPort}${PLAN_COMPOSER_PATH}")
         logger.info("${LogColors.SERVER} Agent cards available at:")
-        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_CARD_PATH")
-        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_CARD_PATH")
-        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Route Planner")}: ${config.baseUrl}:${config.routePlannerPort}${ROUTE_PLANNER_CARD_PATH}")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("POI Researcher")}: ${config.baseUrl}:${config.poiResearcherPort}${POI_RESEARCHER_CARD_PATH}")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Plan Composer")}: ${config.baseUrl}:${config.planComposerPort}${PLAN_COMPOSER_CARD_PATH}")
     }
 
     private suspend fun startRoutePlannerServer() {
@@ -122,13 +137,13 @@ class A2AMeshServer(
     }
 
     fun getEndpoints(): A2AAgentEndpoints = A2AAgentEndpoints(
-        routePlannerUrl = "${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_PATH",
-        poiResearcherUrl = "${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_PATH",
-        planComposerUrl = "${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_PATH"
+        routePlannerUrl = "${config.baseUrl}:${config.routePlannerPort}${ROUTE_PLANNER_PATH}",
+        poiResearcherUrl = "${config.baseUrl}:${config.poiResearcherPort}${POI_RESEARCHER_PATH}",
+        planComposerUrl = "${config.baseUrl}:${config.planComposerPort}${PLAN_COMPOSER_PATH}"
     )
 }
 
-fun Application.a2aMeshRoutes(orchestrator: TravelOrchestratorAgent) {
+fun Application.a2aMeshRoutes(orchestrator: TravelAgentsOrchestrator) {
     routing {
         // Health check endpoint for the A2A mesh
         get("/a2a/health") {

@@ -10,8 +10,9 @@ import io.ktor.sse.ServerSentEvent
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.*
-import org.jetbrains.demo.agent.dto.ProposedTravelPlan
-import org.jetbrains.demo.agent.dto.TravelPlanResult
+import org.jetbrains.demo.agent.a2a.agents.TravelAgentsOrchestrator
+import org.jetbrains.demo.dto.ProposedTravelPlan
+import org.jetbrains.demo.dto.TravelPlanResult
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2ATravelAgent")
@@ -28,7 +29,7 @@ data class A2ATravelPlanResponse(
     val error: String? = null
 )
 
-fun Application.a2aTravelAgentRoutes(orchestrator: TravelOrchestratorAgent) {
+fun Application.a2aTravelAgentRoutes(orchestrator: TravelAgentsOrchestrator) {
     routing {
         route("/a2a") {
             post("/plan") {

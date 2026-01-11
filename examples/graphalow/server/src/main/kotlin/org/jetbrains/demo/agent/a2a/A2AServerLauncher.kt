@@ -9,10 +9,13 @@ import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLMProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import org.jetbrains.demo.agent.tools.Tools
+import org.jetbrains.demo.tools.Tools
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.prompt.executor.clients.google.GoogleClientSettings
+import org.jetbrains.demo.agent.a2a.agents.PLAN_COMPOSER_PATH
+import org.jetbrains.demo.agent.a2a.agents.POI_RESEARCHER_PATH
+import org.jetbrains.demo.agent.a2a.agents.ROUTE_PLANNER_PATH
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2AServerLauncher")
@@ -35,9 +38,9 @@ fun main() = runBlocking {
 
     logger.info("A2A Mesh servers started successfully!")
     logger.info("Endpoints:")
-    logger.info("  Route Planner:  ${config.baseUrl}:${config.routePlannerPort}$ROUTE_PLANNER_PATH")
-    logger.info("  POI Researcher: ${config.baseUrl}:${config.poiResearcherPort}$POI_RESEARCHER_PATH")
-    logger.info("  Plan Composer:  ${config.baseUrl}:${config.planComposerPort}$PLAN_COMPOSER_PATH")
+    logger.info("  Route Planner:  ${config.baseUrl}:${config.routePlannerPort}${ROUTE_PLANNER_PATH}")
+    logger.info("  POI Researcher: ${config.baseUrl}:${config.poiResearcherPort}${POI_RESEARCHER_PATH}")
+    logger.info("  Plan Composer:  ${config.baseUrl}:${config.planComposerPort}${PLAN_COMPOSER_PATH}")
 
     // Keep the main thread alive
     while (true) {
@@ -50,7 +53,7 @@ private fun createPromptExecutor(): MultiLLMPromptExecutor {
     val anthropicKey = System.getenv("ANTHROPIC_AUTH_TOKEN") ?: System.getenv("ANTHROPIC_API_KEY")
     val googleKey = System.getenv("GEMINI_API_KEY")
     val gatewayBaseUrl = System.getenv("LLM_GATEWAY_BASE_URL")
-    val clients = buildList<Pair<LLMProvider, ai.koog.prompt.executor.clients.LLMClient>> {
+    val clients = buildList {
         if (!openAIKey.isNullOrBlank()) {
             val settings = if (gatewayBaseUrl != null) {
                 OpenAIClientSettings(baseUrl = gatewayBaseUrl)
