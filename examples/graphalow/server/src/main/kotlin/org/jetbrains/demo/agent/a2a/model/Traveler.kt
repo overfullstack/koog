@@ -1,11 +1,8 @@
-package org.jetbrains.demo
+package org.jetbrains.demo.agent.a2a.model
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
-
-@Serializable
-data class Travelers(val travelers: List<Traveler>)
 
 @Serializable
 data class PointOfInterest(
@@ -63,51 +60,3 @@ data class ProposedTravelPlan(
     val countriesVisited: List<String>,
 )
 
-@Serializable
-data class Stay(
-    val days: List<Day>,
-    val airbnbUrl: String? = null,
-) {
-
-    fun stayingAt(): String {
-        return days.firstOrNull()?.stayingAt ?: "Unknown location"
-    }
-
-    fun locationAndCountry(): String {
-        return days.firstOrNull()?.locationAndCountry ?: "Unknown location"
-    }
-}
-
-@Serializable
-/**
- * Note created by an LLM but assembled in code.
- */
-data class TravelPlan(
-    val brief: JourneyForm,
-    val proposal: ProposedTravelPlan,
-    val stays: List<Stay>,
-    val travelers: Travelers,
-) {
-
-    /**
-     * Google Maps link for the whole journey. Computed from days.
-     * Even good LLMs seem to get map links wrong, so we compute it here.
-     */
-    val journeyMapUrl: String
-        get() {
-            TODO()
-        }
-
-    val content: String
-        get() = """
-            ${proposal.title}
-            ${proposal.plan}
-            Days: ${proposal.days.joinToString(separator = "\n") { "${it.date} - ${it.stayingAt}" }}
-            Map:
-            $journeyMapUrl
-            Pages:
-            ${proposal.pageLinks.joinToString("\n") { "${it.url} - ${it.summary}" }}
-            Images:
-            ${proposal.imageLinks.joinToString("\n") { "${it.url} - ${it.summary}" }}
-        """.trimIndent()
-}

@@ -9,8 +9,8 @@ import ai.koog.agents.ext.agent.subgraphWithTask
 import ai.koog.prompt.markdown.markdown
 import org.jetbrains.demo.JourneyForm
 import org.jetbrains.demo.LLM_MODEL
-import org.jetbrains.demo.PointOfInterest
-import org.jetbrains.demo.PointOfInterestFindings
+import org.jetbrains.demo.agent.a2a.model.PointOfInterest
+import org.jetbrains.demo.agent.a2a.model.PointOfInterestFindings
 import org.jetbrains.demo.agent.koog.parallel
 import org.jetbrains.demo.agent.tools.Tools
 
@@ -19,7 +19,7 @@ private val WORD_COUNT = 200
 
 fun planner(tools: Tools) = strategy<JourneyForm, ProposedTravelPlan>("travel-planner") {
     val pointsOfInterest by subgraphWithTask<JourneyForm, ItineraryIdeas, ItineraryIdeas>(
-        toolSelectionStrategy = tools.mapsAndWeather(),
+        toolSelectionStrategy = tools.selectionStrategy(),
         llmModel = LLM_MODEL,
         finishTool = ItineraryIdeasProvider
     ) { input ->
@@ -42,7 +42,7 @@ fun planner(tools: Tools) = strategy<JourneyForm, ProposedTravelPlan>("travel-pl
     val compress by nodeLLMCompressHistory<ItineraryIdeas>(strategy = HistoryCompressionStrategy.WholeHistory)
 
     val researchPointOfInterest by subgraphWithTask<PointOfInterest, ResearchedPointOfInterest, ResearchedPointOfInterest>(
-        toolSelectionStrategy = tools.mapsAndWeb(),
+        toolSelectionStrategy = tools.selectionStrategy(),
         llmModel = LLM_MODEL,
         finishTool = ResearchedPointOfInterestProvider
     ) { idea ->
@@ -65,7 +65,7 @@ fun planner(tools: Tools) = strategy<JourneyForm, ProposedTravelPlan>("travel-pl
 
     val researchPoints by parallel(compress, researchPointOfInterest) { it.pointsOfInterest }
     val proposePlan by subgraphWithTask<PointOfInterestFindings, ProposedTravelPlan, ProposedTravelPlan>(
-        toolSelectionStrategy = tools.mapsAndWeather(),
+        toolSelectionStrategy = tools.selectionStrategy(),
         llmModel = LLM_MODEL,
         finishTool = ProposedTravelPlanProvider
     ) { input ->

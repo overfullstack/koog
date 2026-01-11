@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.JourneyForm
-import org.jetbrains.demo.PointOfInterest
+import org.jetbrains.demo.agent.a2a.model.PointOfInterest
 import org.jetbrains.demo.agent.a2a.model.ItineraryIdeasResult
 import org.jetbrains.demo.agent.a2a.model.POIResearchRequest
 import org.jetbrains.demo.agent.a2a.model.POIResearchResult

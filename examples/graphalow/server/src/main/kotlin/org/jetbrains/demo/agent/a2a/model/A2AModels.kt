@@ -2,9 +2,6 @@ package org.jetbrains.demo.agent.a2a.model
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import kotlinx.serialization.Serializable
-import org.jetbrains.demo.Day
-import org.jetbrains.demo.InternetResource
-import org.jetbrains.demo.PointOfInterest
 
 @Serializable
 data class ItineraryIdeasResult(
