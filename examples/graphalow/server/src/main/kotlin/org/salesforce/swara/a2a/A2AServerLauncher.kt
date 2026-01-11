@@ -23,7 +23,7 @@ fun main() = runBlocking {
 
     val config = A2AConfig(
         baseUrl = System.getenv("A2A_BASE_URL") ?: "http://localhost",
-        appointmentBookingPort = System.getenv("APPOINTMENT_BOOKING_PORT")?.toIntOrNull() ?: 9101
+        appointmentBookingPort = System.getenv("APPOINTMENT_BOOKING_PORT")?.toIntOrNull() ?: 9102
     )
 
     val promptExecutor = createPromptExecutor()
