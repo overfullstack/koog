@@ -17,7 +17,7 @@ tasks.register<JavaExec>("runA2AServers") {
     description = "Run the A2A mesh servers (Route Planner, POI Researcher, Plan Composer)"
     group = "application"
     classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("org.salesforce.demo.agent.a2a.A2AServerLauncherKt")
+    mainClass.set("org.salesforce.swara.a2a.A2AServerLauncherKt")
 }
 
 group = "org.salesforce.demo"
