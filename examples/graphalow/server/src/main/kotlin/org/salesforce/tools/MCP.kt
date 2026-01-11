@@ -3,15 +3,14 @@ package org.salesforce.tools
 import ai.koog.agents.core.agent.entity.ToolSelectionStrategy
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.core.tools.reflect.tool
 import ai.koog.agents.mcp.McpToolRegistryProvider
+
 
 data class Tools(
     val mcpTools: ToolRegistry,
 ) {
     fun registry() = ToolRegistry {
         tools(mcpTools.tools)
-        tool(::addDate)
     }
 
     fun selectionStrategy() = ToolSelectionStrategy.Tools(registry().descriptors())

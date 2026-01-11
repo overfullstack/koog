@@ -1,7 +1,10 @@
 package org.salesforce.swara.a2a
 
+import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.prompt.executor.clients.anthropic.AnthropicClientSettings
 import ai.koog.prompt.executor.clients.anthropic.AnthropicLLMClient
+import ai.koog.prompt.executor.clients.google.GoogleClientSettings
 import ai.koog.prompt.executor.clients.google.GoogleLLMClient
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
@@ -9,14 +12,8 @@ import ai.koog.prompt.executor.llms.MultiLLMPromptExecutor
 import ai.koog.prompt.llm.LLMProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import org.salesforce.tools.Tools
-import ai.koog.agents.core.tools.ToolRegistry
-import ai.koog.agents.mcp.McpToolRegistryProvider
-import ai.koog.prompt.executor.clients.google.GoogleClientSettings
 import org.jetbrains.demo.agent.a2a.APPOINTMENT_BOOKING_PATH
-import org.salesforce.travel.agent.a2a.agents.PLAN_COMPOSER_PATH
-import org.salesforce.travel.agent.a2a.agents.POI_RESEARCHER_PATH
-import org.salesforce.travel.agent.a2a.agents.ROUTE_PLANNER_PATH
+import org.salesforce.tools.Tools
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("A2AServerLauncher")

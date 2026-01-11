@@ -14,23 +14,5 @@ app:
   langfusePublicKey: "$LANGFUSE_PUBLIC_KEY:pk-lf-7975f56b-5572-4100-9a04-da53b8743d37"
   langfuseSecretKey: "$LANGFUSE_SECRET_KEY:sk-lf-4acc102c-4e47-4694-a2e5-2e1ee6a0a4da"
 
-  tavilyApiToken: "$TAVILY_API_TOKEN"
-
   a2aEnabled: "$A2A_ENABLED:true"
   a2aBaseUrl: "$A2A_BASE_URL:http://localhost"
-
-  database:
-    driverClassName: "$DB_DRIVER_CLASS_NAME:org.postgresql.Driver"
-    host: "$DB_HOST:localhost"
-    port: "$DATABASE_PORT:5433"
-    name: "$DB_NAME:ktor_sample"
-    username: "$DB_USERNAME:ktor_user"
-    password: "$DB_PASSWORD:ktor_password"
-    maxPoolSize: "$DB_MAX_POOL_SIZE:20"
-    cachePrepStmts: "$DB_CACHE_PREP_STMTS:true"
-    prepStmtCacheSize: "$DB_PREP_STMT_CACHE_SIZE:250"
-    prepStmtCacheSqlLimit: "$DB_PREP_STMT_CACHE_SQL_LIMIT:2048"
-
-    flyway:
-      locations: "$FLYWAY_LOCATIONS:classpath:db/migration"
-      baselineOnMigrate: "$FLYWAY_BASELINE_ON_MIGRATE:true"

@@ -25,8 +25,6 @@ import org.salesforce.swara.a2a.a2aSchedulerRoutes
 import org.salesforce.swara.agents.LOCATION_WEATHER_PATH
 import org.salesforce.swara.chat.ChatService
 import org.salesforce.swara.chat.chatRoutes
-import org.salesforce.travel.AppConfig
-import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
 @Serializable
@@ -39,8 +37,6 @@ data class AppConfig(
     val langfuseUrl: String,
     val langfusePublicKey: String,
     val langfuseSecretKey: String,
-    val weatherApiUrl: String,
-    val tavilyApiToken: String,
     val a2aEnabled: Boolean = false,
     val a2aBaseUrl: String = "http://localhost",
 )

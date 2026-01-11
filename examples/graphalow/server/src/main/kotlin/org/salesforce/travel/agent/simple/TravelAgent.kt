@@ -1,6 +1,7 @@
 package org.salesforce.travel.agent.simple
 
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.reflect.tool
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.agents.features.opentelemetry.integration.langfuse.addLangfuseExporter
 import ai.koog.prompt.dsl.prompt
@@ -20,6 +21,7 @@ import kotlinx.datetime.Clock
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
+import org.salesforce.tools.tools
 import org.salesforce.travel.AgentEvent
 import org.salesforce.travel.AgentEvent.AgentError
 import org.salesforce.travel.AgentEvent.AgentFinished
@@ -31,6 +33,9 @@ import org.salesforce.travel.AgentEvent.Tool
 import org.salesforce.travel.AppConfig
 import org.salesforce.travel.JourneyForm
 import org.salesforce.travel.LLM_MODEL
+import org.salesforce.travel.agent.simple.StreamingAIAgent.Event.Agent
+import org.salesforce.travel.agent.simple.StreamingAIAgent.Event.OnAgentFinished
+import org.salesforce.travel.agent.simple.StreamingAIAgent.Event.OnBeforeAgentStarted
 import org.salesforce.travel.agent.simple.strategy.ItineraryIdeas
 import org.salesforce.travel.agent.simple.strategy.ItineraryIdeasProvider
 import org.salesforce.travel.agent.simple.strategy.ProposedTravelPlan
@@ -38,7 +43,7 @@ import org.salesforce.travel.agent.simple.strategy.ProposedTravelPlanProvider
 import org.salesforce.travel.agent.simple.strategy.ResearchedPointOfInterest
 import org.salesforce.travel.agent.simple.strategy.ResearchedPointOfInterestProvider
 import org.salesforce.travel.agent.simple.strategy.planner
-import org.salesforce.tools.tools
+import org.salesforce.travel.tools.addDate
 import org.slf4j.LoggerFactory
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -72,6 +77,7 @@ fun Application.agent(config: AppConfig) {
                     tool(ItineraryIdeasProvider)
                     tool(ResearchedPointOfInterestProvider)
                     tool(ProposedTravelPlanProvider)
+                    tool(::addDate)
                 },
                 configureAgent = {
                     it.withSystemPrompt(prompt("travel-assistant-agent") {

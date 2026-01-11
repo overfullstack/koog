@@ -2,7 +2,10 @@ package org.salesforce.travel
 
 import ai.koog.ktor.Koog
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.*
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.application.log
+import io.ktor.server.application.pluginOrNull
 import io.ktor.server.config.ApplicationConfig
 import io.ktor.server.config.getAs
 import io.ktor.server.engine.embeddedServer
@@ -14,13 +17,12 @@ import io.ktor.server.websocket.pingPeriod
 import io.ktor.server.websocket.timeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.salesforce.travel.agent.a2a.agents.A2AAgentEndpoints
 import org.salesforce.travel.agent.a2a.A2AConfig
-import org.salesforce.travel.agent.a2a.agents.TravelAgentsOrchestrator
 import org.salesforce.travel.agent.a2a.a2aTravelAgentRoutes
+import org.salesforce.travel.agent.a2a.agents.A2AAgentEndpoints
+import org.salesforce.travel.agent.a2a.agents.TravelAgentsOrchestrator
 import org.salesforce.travel.agent.a2a.chatRoutes
 import org.salesforce.travel.agent.simple.agent
-import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
 @Serializable
@@ -33,8 +35,6 @@ data class AppConfig(
     val langfuseUrl: String,
     val langfusePublicKey: String,
     val langfuseSecretKey: String,
-    val weatherApiUrl: String,
-    val tavilyApiToken: String,
     val a2aEnabled: Boolean = false,
     val a2aBaseUrl: String = "http://localhost",
 )
