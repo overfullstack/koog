@@ -22,6 +22,7 @@ import org.jetbrains.demo.agent.a2a.a2aSchedulerRoutes
 import org.jetbrains.demo.agent.a2a.chatRoutes
 import org.jetbrains.demo.agent.a2a.LOCATION_WEATHER_PATH
 import org.jetbrains.demo.agent.a2a.APPOINTMENT_BOOKING_PATH
+import org.jetbrains.demo.agent.a2a.SERVICE_TERRITORY_PATH
 import kotlin.String
 import kotlin.time.Duration.Companion.seconds
 
@@ -99,6 +100,7 @@ private fun Application.a2aMesh(config: AppConfig) {
     // The A2A agent servers must be started separately (see A2AServerLauncher.kt)
     val orchestrator = SchedulerOrchestratorAgent(
         A2ASchedulerEndpoints(
+            serviceTerritoryUrl = "${config.a2aBaseUrl}:${a2aConfig.serviceTerritoryPort}$SERVICE_TERRITORY_PATH",
             locationWeatherUrl = "${config.a2aBaseUrl}:${a2aConfig.locationWeatherPort}$LOCATION_WEATHER_PATH",
             appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
         )

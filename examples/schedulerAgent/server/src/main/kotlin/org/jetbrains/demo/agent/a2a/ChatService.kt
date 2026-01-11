@@ -692,6 +692,22 @@ class ChatService(
                     ))
                 }
                 
+                is AppointmentProgress.CheckingServiceTerritory -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "🗺️ Looking up service territory..."
+                    ))
+                }
+                
+                is AppointmentProgress.ServiceTerritoryComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId, 
+                        type = "progress", 
+                        content = "✓ Service territory found: lat=${String.format("%.4f", progress.territoryInfo.latitude)}, lon=${String.format("%.4f", progress.territoryInfo.longitude)} (${progress.durationMs}ms)"
+                    ))
+                }
+                
                 is AppointmentProgress.CheckingLocationWeather -> {
                     emit(ChatStreamEvent(
                         sessionId = sessionId, 

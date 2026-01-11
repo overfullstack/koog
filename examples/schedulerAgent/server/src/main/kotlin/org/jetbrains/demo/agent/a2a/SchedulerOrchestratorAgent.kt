@@ -25,6 +25,17 @@ sealed class AppointmentProgress {
     @kotlinx.serialization.Serializable
     data class Started(val appointmentType: String, val location: String) : AppointmentProgress()
     
+    /** Checking service territory */
+    @kotlinx.serialization.Serializable
+    data object CheckingServiceTerritory : AppointmentProgress()
+    
+    /** Service territory check complete */
+    @kotlinx.serialization.Serializable
+    data class ServiceTerritoryComplete(
+        val territoryInfo: ServiceTerritoryResult,
+        val durationMs: Long
+    ) : AppointmentProgress()
+    
     /** Checking location and weather */
     @kotlinx.serialization.Serializable
     data object CheckingLocationWeather : AppointmentProgress()
@@ -53,6 +64,7 @@ sealed class AppointmentProgress {
 }
 
 data class A2ASchedulerEndpoints(
+    val serviceTerritoryUrl: String,
     val locationWeatherUrl: String,
     val appointmentBookingUrl: String
 )
@@ -71,8 +83,19 @@ class SchedulerOrchestratorAgent(
         logger.info("${LogColors.ORCHESTRATOR} Appointment: ${appointmentForm.appointmentGroup} at ${appointmentForm.location}")
         logger.info("${LogColors.ORCHESTRATOR} Time: ${appointmentForm.appointmentTime}")
 
-        // Step 1: Call Location Weather Agent
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/2]")} Calling Location Weather Agent at ${endpoints.locationWeatherUrl}")
+        // Step 1: Call Service Territory Agent
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 1/3]")} Calling Service Territory Agent at ${endpoints.serviceTerritoryUrl}")
+        val serviceTerritoryStart = System.currentTimeMillis()
+        val territoryRequest = ServiceTerritoryRequest(
+            location = appointmentForm.location
+        )
+        val territoryInfo = callServiceTerritoryAgent(territoryRequest)
+        val serviceTerritoryDuration = System.currentTimeMillis() - serviceTerritoryStart
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("[STEP 1/3]")} Service Territory completed in ${serviceTerritoryDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   Coordinates: lat=${territoryInfo.latitude}, lon=${territoryInfo.longitude}")
+
+        // Step 2: Call Location Weather Agent
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 2/3]")} Calling Location Weather Agent at ${endpoints.locationWeatherUrl}")
         val locationWeatherStart = System.currentTimeMillis()
         val weatherRequest = LocationWeatherRequest(
             location = appointmentForm.location,
@@ -80,10 +103,10 @@ class SchedulerOrchestratorAgent(
         )
         val weatherInfo = callLocationWeatherAgent(weatherRequest)
         val locationWeatherDuration = System.currentTimeMillis() - locationWeatherStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 1/2]")} Location Weather completed in ${locationWeatherDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.cyan("[STEP 2/3]")} Location Weather completed in ${locationWeatherDuration}ms")
 
-        // Step 2: Call Appointment Booking Agent
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 2/2]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
+        // Step 3: Call Appointment Booking Agent
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 3/3]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
         val bookingStart = System.currentTimeMillis()
         val bookingRequest = AppointmentBookingRequest(
             appointmentForm = appointmentForm,
@@ -91,11 +114,12 @@ class SchedulerOrchestratorAgent(
         )
         val bookingResult = callAppointmentBookingAgent(bookingRequest)
         val bookingDuration = System.currentTimeMillis() - bookingStart
-        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 2/2]")} Appointment Booking completed in ${bookingDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 3/3]")} Appointment Booking completed in ${bookingDuration}ms")
 
-        val totalDuration = locationWeatherDuration + bookingDuration
+        val totalDuration = serviceTerritoryDuration + locationWeatherDuration + bookingDuration
         logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE"))
         logger.info("${LogColors.ORCHESTRATOR} Total orchestration time: ${totalDuration}ms")
+        logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.yellow("Service Territory")}: ${serviceTerritoryDuration}ms")
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.cyan("Location Weather")}: ${locationWeatherDuration}ms")
         logger.info("${LogColors.ORCHESTRATOR}   ${LogColors.magenta("Appointment Booking")}: ${bookingDuration}ms")
 
@@ -120,7 +144,19 @@ class SchedulerOrchestratorAgent(
         logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION START (Streaming)"))
         
         try {
-            // Step 1: Check location and weather
+            // Step 1: Check service territory
+            emit(AppointmentProgress.CheckingServiceTerritory)
+            val serviceTerritoryStart = System.currentTimeMillis()
+            val territoryRequest = ServiceTerritoryRequest(
+                location = appointmentForm.location
+            )
+            val territoryInfo = callServiceTerritoryAgent(territoryRequest)
+            val serviceTerritoryDuration = System.currentTimeMillis() - serviceTerritoryStart
+            
+            emit(AppointmentProgress.ServiceTerritoryComplete(territoryInfo, serviceTerritoryDuration))
+            logger.info("${LogColors.ORCHESTRATOR} Territory check complete: lat=${territoryInfo.latitude}, lon=${territoryInfo.longitude}")
+            
+            // Step 2: Check location and weather
             emit(AppointmentProgress.CheckingLocationWeather)
             val locationWeatherStart = System.currentTimeMillis()
             val weatherRequest = LocationWeatherRequest(
@@ -133,7 +169,7 @@ class SchedulerOrchestratorAgent(
             emit(AppointmentProgress.LocationWeatherComplete(weatherInfo, locationWeatherDuration))
             logger.info("${LogColors.ORCHESTRATOR} Weather check complete: ${weatherInfo.weather}")
             
-            // Step 2: Book appointment
+            // Step 3: Book appointment
             emit(AppointmentProgress.BookingAppointment)
             val bookingStart = System.currentTimeMillis()
             val bookingRequest = AppointmentBookingRequest(
@@ -153,11 +189,39 @@ class SchedulerOrchestratorAgent(
             emit(AppointmentProgress.BookingComplete(finalResult, totalDuration))
             
             logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE (Streaming)"))
-            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Weather: ${locationWeatherDuration}ms, Booking: ${bookingDuration}ms)")
+            logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms (Territory: ${serviceTerritoryDuration}ms, Weather: ${locationWeatherDuration}ms, Booking: ${bookingDuration}ms)")
             
         } catch (e: Exception) {
             logger.error("${LogColors.ORCHESTRATOR} Error during booking: ${e.message}", e)
             emit(AppointmentProgress.Error(e.message ?: "Unknown error during appointment booking"))
+        }
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun callServiceTerritoryAgent(request: ServiceTerritoryRequest): ServiceTerritoryResult {
+        val transport = HttpJSONRPCClientTransport(url = endpoints.serviceTerritoryUrl)
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = endpoints.serviceTerritoryUrl.substringBefore(SERVICE_TERRITORY_PATH),
+            path = SERVICE_TERRITORY_CARD_PATH
+        )
+        val client = A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+
+        try {
+            client.connect()
+            val contextId = Uuid.random().toString()
+
+            val message = Message(
+                messageId = Uuid.random().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(json.encodeToString(ServiceTerritoryRequest.serializer(), request))),
+                contextId = contextId,
+                taskId = null
+            )
+
+            val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
+            return extractArtifact(responses, "service-territory")
+        } finally {
+            transport.close()
         }
     }
 

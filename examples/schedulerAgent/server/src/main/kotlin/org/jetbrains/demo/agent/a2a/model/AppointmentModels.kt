@@ -31,6 +31,21 @@ data class AppointmentForm(
 )
 
 @Serializable
+data class ServiceTerritoryRequest(
+    val location: String
+)
+
+@Serializable
+data class ServiceTerritoryResult(
+    @property:LLMDescription("Original location string")
+    val location: String,
+    @property:LLMDescription("Latitude coordinate")
+    val latitude: Double,
+    @property:LLMDescription("Longitude coordinate")
+    val longitude: Double
+)
+
+@Serializable
 data class LocationWeatherRequest(
     val location: String,
     val appointmentTime: LocalDateTime

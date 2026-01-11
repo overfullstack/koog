@@ -17,6 +17,7 @@ private val logger = LoggerFactory.getLogger("A2AServerSetup")
 
 data class A2AConfig(
     val baseUrl: String,
+    val serviceTerritoryPort: Int = 9103,
     val locationWeatherPort: Int = 9101,
     val appointmentBookingPort: Int = 9102
 )
@@ -32,19 +33,46 @@ class A2AMeshServer(
         logger.info(LogColors.serverBanner("A2A SCHEDULER SERVER STARTING"))
         logger.info("${LogColors.SERVER} Base URL: ${config.baseUrl}")
         logger.info("${LogColors.SERVER} Configured ports:")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Service Territory")}: ${config.serviceTerritoryPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.locationWeatherPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.appointmentBookingPort}")
 
+        scope.launch { startServiceTerritoryServer() }
         scope.launch { startLocationWeatherServer() }
         scope.launch { startAppointmentBookingServer() }
 
         logger.info(LogColors.serverBanner("A2A SCHEDULER SERVER STARTED"))
         logger.info("${LogColors.SERVER} Endpoints available:")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Service Territory")}: ${config.baseUrl}:${config.serviceTerritoryPort}$SERVICE_TERRITORY_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH")
         logger.info("${LogColors.SERVER} Agent cards available at:")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Service Territory")}: ${config.baseUrl}:${config.serviceTerritoryPort}$SERVICE_TERRITORY_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_CARD_PATH")
+    }
+
+    private suspend fun startServiceTerritoryServer() {
+        logger.info("${LogColors.SERVICE_TERRITORY} Server initializing...")
+        val agentCard = serviceTerritoryAgentCard("${config.baseUrl}:${config.serviceTerritoryPort}")
+        val agentExecutor = ServiceTerritoryAgentExecutor(promptExecutor, tools.territoryTools)
+        val a2aServer = A2AServer(
+            agentExecutor = agentExecutor,
+            agentCard = agentCard,
+        )
+
+        val serverTransport = HttpJSONRPCServerTransport(a2aServer)
+        logger.info("${LogColors.SERVICE_TERRITORY} Server starting on port ${config.serviceTerritoryPort}")
+
+        serverTransport.start(
+            engineFactory = CIO,
+            port = config.serviceTerritoryPort,
+            path = SERVICE_TERRITORY_PATH,
+            wait = false,
+            agentCard = agentCard,
+            agentCardPath = SERVICE_TERRITORY_CARD_PATH
+        )
+        logger.info("${LogColors.SERVICE_TERRITORY} Server started successfully")
     }
 
     private suspend fun startLocationWeatherServer() {
@@ -94,6 +122,7 @@ class A2AMeshServer(
     }
 
     fun getEndpoints(): A2ASchedulerEndpoints = A2ASchedulerEndpoints(
+        serviceTerritoryUrl = "${config.baseUrl}:${config.serviceTerritoryPort}$SERVICE_TERRITORY_PATH",
         locationWeatherUrl = "${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH",
         appointmentBookingUrl = "${config.baseUrl}:${config.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
     )

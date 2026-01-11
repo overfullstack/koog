@@ -17,6 +17,7 @@ import kotlinx.serialization.json.Json
 import org.jetbrains.demo.agent.tools.TavilySearchTool
 import org.jetbrains.demo.agent.tools.Tools
 import org.jetbrains.demo.agent.tools.WeatherTool
+import org.jetbrains.demo.agent.tools.TerritoryTools
 import ai.koog.agents.core.tools.ToolRegistry
 import ai.koog.agents.mcp.McpToolRegistryProvider
 import ai.koog.prompt.executor.clients.google.GoogleClientSettings
@@ -108,10 +109,12 @@ private suspend fun createTools(): Tools {
 
     val weatherTool = WeatherTool(httpClient, weatherApiUrl)
     val searchTool = TavilySearchTool(httpClient, tavilyApiKey)
+    val territoryTools = TerritoryTools()
 
     return Tools(
         searchTool = searchTool,
         weatherTool = weatherTool,
-        googleMaps = googleMaps
+        googleMaps = googleMaps,
+        territoryTools = territoryTools
     )
 }

@@ -19,11 +19,13 @@ data class Tools(
     val searchTool: TavilySearchTool,
     val weatherTool: WeatherTool,
     val googleMaps: ToolRegistry,
+    val territoryTools: TerritoryTools,
 ) {
     fun registry() = ToolRegistry {
         tools(searchTool)
         tools(googleMaps.tools)
         tools(weatherTool)
+        tools(territoryTools)
         tool(::addDate)
     }
 
@@ -32,6 +34,7 @@ data class Tools(
             tools(searchTool)
             tools(googleMaps.tools)
             tools(weatherTool)
+            tools(territoryTools)
             tool(::addDate)
         }.descriptors()
     )
@@ -40,6 +43,7 @@ data class Tools(
         ToolRegistry {
             tools(googleMaps.tools)
             tools(searchTool)
+            tools(territoryTools)
             tool(::addDate)
         }.descriptors()
     )
@@ -49,7 +53,8 @@ suspend fun Application.tools(config: AppConfig): Tools {
     val googleMaps = McpToolRegistryProvider.fromSseTransport("http://localhost:9011")
     val weather = WeatherTool(httpClient(), config.weatherApiUrl)
     val searchTool = TavilySearchTool(httpClient(), config.tavilyApiKey)
-    return Tools(googleMaps = googleMaps, weatherTool = weather, searchTool = searchTool)
+    val territoryTools = TerritoryTools()
+    return Tools(googleMaps = googleMaps, weatherTool = weather, searchTool = searchTool, territoryTools = territoryTools)
 }
 
 private suspend fun McpToolRegistryProvider.fromSseTransport(url: String): ToolRegistry =
