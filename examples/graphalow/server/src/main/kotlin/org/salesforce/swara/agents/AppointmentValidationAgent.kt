@@ -166,13 +166,14 @@ private fun appointmentValidationStrategy() = strategy<A2AMessage, Unit>("appoin
 
     val validateAppointment by node<AppointmentValidationRequest, AppointmentValidationResult> { request ->
         logger.info("${LogColors.VALIDATION} Calling validation tool directly...")
-        logger.info("${LogColors.VALIDATION} WorkTypeGroupName: ${request.workTypeGroupName}")
+        logger.info("${LogColors.VALIDATION} WorkTypeGroupName: ${request.workTypeGroupName}, Hospital: ${request.hospitalName}")
         
         // Call the validation tool directly
         val validationTool = AppointmentValidationTool()
         val toolResponse = try {
             validationTool.validateWorkTypeGroup(
-                workTypeGroupName = request.workTypeGroupName
+                workTypeGroupName = request.workTypeGroupName,
+                hospitalName = request.hospitalName
             )
         } catch (e: Exception) {
             logger.error("${LogColors.VALIDATION} Tool execution failed: ${e.message}", e)
@@ -299,7 +300,7 @@ private fun appointmentValidationStrategy() = strategy<A2AMessage, Unit>("appoin
                         "Check logs for full response details."
                     } else {
                         val availableNames = availableWorkTypeGroups.mapNotNull { it.name }.joinToString(", ")
-                        "Work type group '${request.workTypeGroupName}' not found. Available work type groups: $availableNames"
+                        "The work type group '${request.workTypeGroupName}' is not currently available. Available work type groups: $availableNames."
                     }
                 }
                 

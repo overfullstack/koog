@@ -1,0 +1,45 @@
+rootProject.name = "schedulerAgent"
+enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+
+pluginManagement {
+    repositories {
+        google {
+            mavenContent {
+                includeGroupAndSubgroups("com.google")
+            }
+        }
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    versionCatalogs {
+        create("ktorLibs") {
+            from("io.ktor:ktor-version-catalog:3.3.3")
+        }
+    }
+    repositories {
+        google {
+            mavenContent {
+                includeGroupAndSubgroups("com.google")
+            }
+        }
+        maven("https://packages.jetbrains.team/maven/p/grazi/grazie-platform-public") {
+            mavenContent {
+                includeGroupAndSubgroups("ai.koog")
+            }
+        }
+        mavenCentral()
+        mavenLocal()
+    }
+}
+
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+
+includeBuild("../../.") {
+    name = "koog"
+}
+
+include(":server")

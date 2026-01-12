@@ -22,7 +22,8 @@ import org.jetbrains.demo.agent.a2a.SchedulerAgentOrchestrator
 import org.jetbrains.demo.agent.a2a.TIMESLOT_VALIDATION_PATH
 import org.salesforce.swara.a2a.A2AConfig
 import org.salesforce.swara.a2a.a2aSchedulerRoutes
-import org.salesforce.swara.agents.LOCATION_WEATHER_PATH
+import org.salesforce.swara.agents.MAPS_PATH
+import org.salesforce.swara.agents.TAVILY_PATH
 import org.salesforce.swara.chat.ChatService
 import org.salesforce.swara.chat.chatRoutes
 import kotlin.time.Duration.Companion.seconds
@@ -80,7 +81,7 @@ fun Application.app(config: AppConfig) {
 private fun Application.a2aMesh(config: AppConfig) {
     val a2aConfig = A2AConfig(
         baseUrl = config.a2aBaseUrl,
-        locationWeatherPort = 9101,
+        tavilyPort = 9101,
         appointmentValidationPort = 9103,
         serviceTerritoryValidationPort = 9104,
         timeslotValidationPort = 9105,
@@ -91,11 +92,12 @@ private fun Application.a2aMesh(config: AppConfig) {
     // The A2A agent servers must be started separately (see A2AServerLauncher.kt)
     val schedulerAgentOrchestrator = SchedulerAgentOrchestrator(
         A2ASchedulerEndpoints(
-            locationWeatherUrl = "${config.a2aBaseUrl}:${a2aConfig.locationWeatherPort}$LOCATION_WEATHER_PATH",
+            locationReviewUrl = "${config.a2aBaseUrl}:${a2aConfig.tavilyPort}$TAVILY_PATH",
             appointmentValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentValidationPort}$APPOINTMENT_VALIDATION_PATH",
             serviceTerritoryValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
             timeslotValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
-            appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH"
+            appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH",
+            mapsUrl = "${config.a2aBaseUrl}:${a2aConfig.mapsPort}$MAPS_PATH"
         )
     )
     a2aSchedulerRoutes()

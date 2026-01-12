@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Suppress ALL logging output from frameworks and tools -->
+    <!-- Only allow explicit println statements from agent code -->
+    <root level="OFF">
+        <appender name="NULL" class="ch.qos.logback.core.helpers.NOPAppender"/>
+    </root>
+</configuration>
+

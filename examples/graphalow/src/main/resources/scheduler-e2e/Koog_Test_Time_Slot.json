@@ -1,0 +1,214 @@
+{
+  "info": {
+    "_postman_id": "57ece018-0021-44bd-9386-5457e38670d7",
+    "name": "Koog Test Copy 4",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "50428933",
+    "_collection_link": "https://jthoppil-ecd8d498-7626308.postman.co/workspace/Josson-Joe-Thoppil's-Workspace~538aa9ec-13ff-40a4-850f-1f4e413e452d/collection/50428933-57ece018-0021-44bd-9386-5457e38670d7?action=share&source=collection_link&creator=50428933"
+  },
+  "item": [
+    {
+      "name": "Auth With Credentials",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const responseBody = pm.response.text();",
+              "const responseXml = pm.response.text();",
+              "const responseJson = xml2Json(responseXml);",
+              "const sessionIdValue = responseJson['soapenv:Envelope']['soapenv:Body'].loginResponse.result.sessionId;",
+              "pm.environment.set(\"sessionID\", sessionIdValue);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "SOAPAction",
+            "value": "login"
+          },
+          {
+            "key": "Content-Type",
+            "value": "text/xml"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n    <soap:Body>\n        <login xmlns=\"urn:partner.soap.sforce.com\">\n            <username>{{username}}</username>\n            <password>{{password}}</password>\n        </login>\n    </soap:Body>\n</soap:Envelope>",
+          "options": {
+            "raw": {
+              "language": "xml"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://login.salesforce-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101/services/Soap/u/64.0",
+          "protocol": "https",
+          "host": [
+            "login",
+            "salesforce-com",
+            "1lve4kc9rs3u0u75fbapeq5",
+            "ac",
+            "crm",
+            "dev"
+          ],
+          "port": "6101",
+          "path": [
+            "services",
+            "Soap",
+            "u",
+            "64.0"
+          ]
+        },
+        "description": "Generated from cURL: curl --location --request POST 'https://login.salesforce.com/services/Soap/u/59.0' \\\n--header 'SOAPAction: login' \\\n--header 'Content-Type: text/xml' \\\n--data-raw '<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n    <soap:Body>\n        <login xmlns=\"urn:partner.soap.sforce.com\">\n            <username>YOUR_SALESFORCE_USERNAME</username>\n            <password>YOUR_PASSWORD_AND_SECURITY_TOKEN</password>\n        </login>\n    </soap:Body>\n</soap:Envelope>'"
+      },
+      "response": []
+    },
+    {
+      "name": "Time Slots - Anonymous Booking Copy",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// --- Start of Pre-request Script ---",
+              "",
+              "// Helper function to pad single digits with a leading zero",
+              "const pad = (num) => (num < 10 ? '0' + num : num);",
+              "",
+              "// Date arrays for formatting",
+              "const days = [\"Sun\", \"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\", \"Sat\"];",
+              "const months = [\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\", \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"];",
+              "",
+              "// --- 1. Calculate Start Date/Time (Current Time) ---",
+              "const now = new Date();",
+              "",
+              "// Function to format a given Date object",
+              "const formatDateTime = (dateObj) => {",
+              "    const dayOfWeek = days[dateObj.getDay()];",
+              "    const month = months[dateObj.getMonth()];",
+              "    const dayOfMonth = pad(dateObj.getDate());",
+              "    const hour = pad(dateObj.getHours());",
+              "    const minute = pad(dateObj.getMinutes());",
+              "    const second = pad(dateObj.getSeconds());",
+              "    const year = dateObj.getFullYear();",
+              "",
+              "    // Construct the desired string: \"Sun Nov 30 14:30:00 PST 2025\"",
+              "    // Note: PST is hardcoded as before.",
+              "    return `${dayOfWeek} ${month} ${dayOfMonth} ${hour}:${minute}:${second} PST ${year}`;",
+              "};",
+              "",
+              "// Set the startDateTime variable",
+              "const startFormatted = formatDateTime(now);",
+              "pm.environment.set(\"startDateTime\", startFormatted);",
+              "const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;",
+              "const futureTimeMs = now.getTime() + sevenDaysInMs;",
+              "const futureDate = new Date(futureTimeMs);",
+              "const endFormatted = formatDateTime(futureDate);",
+              "",
+              "pm.environment.set(\"endDateTime\", endFormatted);"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const responseJson5 = pm.response.json();",
+              "const firstSlot = responseJson5.allAppointmentTimeSlotResponse.slots[0];",
+              "const startTime = firstSlot.startTime;",
+              "const endTime = firstSlot.endTime;",
+              "const firstResourceId = responseJson5.allAppointmentTimeSlotResponse.slots[0].resources[0];",
+              "pm.environment.set(\"startTime\", startTime);",
+              "pm.environment.set(\"endTime\", endTime);",
+              "pm.environment.set(\"serviceResourceID\",firstResourceId)"
+            ],
+            "type": "text/javascript",
+            "packages": {},
+            "requests": {}
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disabledSystemHeaders": {
+          "user-agent": true,
+          "connection": true,
+          "accept-encoding": true,
+          "accept": true
+        }
+      },
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"workTypeGroupId\": \"{{workTypeGroupID}}\",\n    \"territoryIds\": [\n        \"{{serviceTerritoryID}}\"\n    ],\n    \"startTime\": \"{{startDateTime}}\",\n    \"endTime\": \"{{endDateTime}}\",\n    \"schedulingPolicyName\": \"\",\n    \"allowConcurrentScheduling\": true,\n    \"filterByResources\": null,\n    \"resourceLimitApptDistribution\": null,\n    \"correlationId\": null,\n    \"appointmentMode\": null\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/services/data/v66.0/connect/appointmentbooking/get-appointment-slots",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "services",
+            "data",
+            "v66.0",
+            "connect",
+            "appointmentbooking",
+            "get-appointment-slots"
+          ]
+        },
+        "description": "Generated from cURL: curl 'https://embassy.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101/aura?r=219&aura.AppointmentBookingConnect.getResourcesNextAvailability=1' \\\n  -H 'accept: */*' \\\n  -H 'accept-language: en-GB,en-US;q=0.9,en;q=0.8' \\\n  -H 'content-type: application/x-www-form-urlencoded; charset=UTF-8' \\\n  -b $'CookieConsentPolicy=0:1; LSKey-c$CookieConsentPolicy=0:1; sid_Client=x000001X8mjx00Y77OCGOe; clientSrc=10.108.150.159; 79eb100099b9a8bf=3:true:.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev; SetupDomainProbePassed=true; flexipageLMTsfa__Account_rec_L=1764523383546; sid=00Dxx00Y77OCGOe\\u0021AQEAQFY14gUxqCvfTCV1DgOvjxshEf9Rv284g1DpEnFyVjiWYQzN6Bw2xkGiZVV.q.hM3Utigy_mnjL0G94RmYxNOezb.caz; flexipageLMTflexipage__default_rec_L=1764343426894; x-sfdc-release-version=Test-260000000-1764568557701' \\\n  -H 'origin: https://embassy.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101' \\\n  -H 'priority: u=1, i' \\\n  -H 'referer: https://embassy.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101/lightning/action/quick/Account.Schedule_LWC_Appointment?objectApiName&context=RECORD_DETAIL&recordId=001xx000003GZPjAAO&backgroundContext=%2Flightning%2Fr%2FAccount%2F001xx000003GZPjAAO%2Fview' \\\n  -H 'sec-ch-ua: \"Chromium\";v=\"142\", \"Google Chrome\";v=\"142\", \"Not_A Brand\";v=\"99\"' \\\n  -H 'sec-ch-ua-mobile: ?0' \\\n  -H 'sec-ch-ua-platform: \"macOS\"' \\\n  -H 'sec-fetch-dest: empty' \\\n  -H 'sec-fetch-mode: cors' \\\n  -H 'sec-fetch-site: same-origin' \\\n  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36' \\\n  -H 'x-b3-sampled: 1' \\\n  -H 'x-b3-spanid: a1c2d1117a858ee8' \\\n  -H 'x-b3-traceid: e1998b7e1d187873' \\\n  -H 'x-sfdc-request-id: 2735799190000bcf99' \\\n  --data-raw 'message=%7B%22actions%22%3A%5B%7B%22id%22%3A%222908%3Ba%22%2C%22descriptor%22%3A%22aura%3A%2F%2FAppointmentBookingConnectController%2FACTION%24getResourcesNextAvailability%22%2C%22callingDescriptor%22%3A%22UNKNOWN%22%2C%22params%22%3A%7B%22getResourcesNextAvailabilityInputRepresentation%22%3A%7B%22parentRecordId%22%3A%22001xx000003GZPjAAO%22%2C%22workTypeGroupId%22%3A%220VSxx0000004CDsGAM%22%2C%22territoryId%22%3A%220Hhxx0000004C92CAE%22%2C%22areResourcesSortedByAvailability%22%3Atrue%2C%22appointmentMode%22%3A%22Regular%22%7D%7D%7D%5D%7D&aura.context=%7B%22mode%22%3A%22DEV%22%2C%22fwuid%22%3A%22RlNtRDFERG9nSUo3Y1p5bWV4S2ZhZzRsZkJBZG15X0RhRDRYYk1zN2xuNUExMy4tMjE0NzQ4MzY0OC45OTYxNDcy%22%2C%22app%22%3A%22one%3Aone%22%2C%22loaded%22%3A%7B%22APPLICATION%40markup%3A%2F%2Fone%3Aone%22%3A%224004_bq3eHfodkVhrc05yHDH57Q%22%7D%2C%22dn%22%3A%5B%5D%2C%22globals%22%3A%7B%22density%22%3A%22VIEW_ONE%22%2C%22appContextId%22%3A%2206mxx0000009QFeAAM%22%7D%2C%22uad%22%3Atrue%7D&aura.pageURI=%2Flightning%2Faction%2Fquick%2FAccount.Schedule_LWC_Appointment%3FobjectApiName%26context%3DRECORD_DETAIL%26recordId%3D001xx000003GZPjAAO%26backgroundContext%3D%252Flightning%252Fr%252FAccount%252F001xx000003GZPjAAO%252Fview&aura.token=eyJub25jZSI6IjRDVDNma1kxZTFWQjRkYzJ6WVRuX2NaelRjRVVMTjFCa0FZUHZPRVYxWW9cdTAwM2QiLCJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiIsImtpZCI6IntcInRcIjpcIjAwRHh4MDAwMDAwMWdFSFwiLFwidlwiOlwiMDJHeHgwMDAwMDA1SXk0XCIsXCJhXCI6XCJjYWltYW5zaWduZXJcIn0iLCJjcml0IjpbImlhdCJdLCJpYXQiOjE3NjQ1Njg5NTYxOTIsImV4cCI6MH0%3D..0p7BcNfVAN4S_QSU6WF07yeSO-E2-UXg3HjFZcwjnPE%3D'"
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{sessionID}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ]
+}

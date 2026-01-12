@@ -48,7 +48,7 @@
             }
           },
           "url": {
-            "raw": "https://login.salesforce-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101/services/Soap/u/64.0",
+            "raw": "{{baseUrl}}/services/Soap/u/64.0",
             "protocol": "https",
             "host": [
               "login",

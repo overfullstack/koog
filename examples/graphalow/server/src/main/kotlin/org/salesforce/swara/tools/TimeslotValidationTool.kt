@@ -34,7 +34,7 @@ class TimeslotValidationTool : ToolSet {
         
         try {
             val pmCollectionPaths = "scheduler-e2e/Validate_Timeslot.json"
-            val pmEnvironmentPaths = listOf("scheduler-e2e/Scheduler_Test_Env.json")
+            val pmEnvironmentPaths = listOf("scheduler-e2e/Apollo_Env.json")
             
             // Verify files exist
             val collectionFile = java.io.File("src/main/resources/$pmCollectionPaths")
@@ -199,15 +199,55 @@ class TimeslotValidationTool : ToolSet {
                         return text.substring(bestStart, bestEnd)
                     }
                     
+                    // PRIORITY: First look specifically for the response structure (allAppointmentTimeSlotResponse)
+                    // This ensures we don't accidentally return the request body
+                    val responseMarker = "\"allAppointmentTimeSlotResponse\""
+                    val responseIdx = text.indexOf(responseMarker)
+                    if (responseIdx >= 0) {
+                        // Find the start of the JSON object containing this marker
+                        var searchStart = responseIdx
+                        while (searchStart > 0 && text[searchStart] != '{') {
+                            searchStart--
+                        }
+                        if (searchStart >= 0 && text[searchStart] == '{') {
+                            // Now find the matching closing brace
+                            var depth = 0
+                            var inStr = false
+                            var escNext = false
+                            for (i in searchStart until text.length) {
+                                val c = text[i]
+                                when {
+                                    escNext -> escNext = false
+                                    c == '\\' -> escNext = true
+                                    c == '"' && !escNext -> inStr = !inStr
+                                    !inStr && c == '{' -> depth++
+                                    !inStr && c == '}' -> {
+                                        depth--
+                                        if (depth == 0) {
+                                            val result = text.substring(searchStart, i + 1)
+                                            logger.info("Found allAppointmentTimeSlotResponse JSON: ${result.take(200)}...")
+                                            return result
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
                     // Last resort: find first '{' and last '}' (simple approach)
                     val firstBrace = text.indexOf('{')
                     val lastBrace = text.lastIndexOf('}')
                     if (firstBrace >= 0 && lastBrace > firstBrace) {
                         val candidate = text.substring(firstBrace, lastBrace + 1)
-                        // Basic validation - check it looks like JSON and starts with expected structure
+                        // Basic validation - check it looks like JSON and contains response structure
                         if (candidate.trim().startsWith("{") && candidate.trim().endsWith("}") && 
-                            candidate.contains("\"allAppointmentTimeSlotResponse\"") || candidate.contains("\"slots\"")) {
+                            (candidate.contains("\"allAppointmentTimeSlotResponse\"") || candidate.contains("\"slots\""))) {
                             return candidate
+                        }
+                        // If the candidate contains request fields, it's NOT the response - skip it
+                        if (candidate.contains("\"workTypeGroupId\"") && candidate.contains("\"territoryIds\"")) {
+                            logger.warn("Skipping JSON that appears to be request body, not response")
+                            return null
                         }
                     }
                     
@@ -271,10 +311,25 @@ class TimeslotValidationTool : ToolSet {
                 }
                 
                 // Try to extract JSON from whatever we found
-                val extractedJson = extractJsonFromResponse(responseBody)
+                var extractedJson = extractJsonFromResponse(responseBody)
+                
+                // Check if we accidentally got the request body instead of response
+                if (extractedJson != null && 
+                    extractedJson.contains("\"workTypeGroupId\"") && 
+                    extractedJson.contains("\"territoryIds\"") &&
+                    !extractedJson.contains("\"allAppointmentTimeSlotResponse\"")) {
+                    logger.warn("Extracted JSON appears to be REQUEST body, not response. Looking for actual response...")
+                    // Try to find the response in the full step string
+                    val stepString = lastStep.toString()
+                    val responseMarkerIdx = stepString.indexOf("\"allAppointmentTimeSlotResponse\"")
+                    if (responseMarkerIdx >= 0) {
+                        logger.info("Found allAppointmentTimeSlotResponse marker at index $responseMarkerIdx, re-extracting...")
+                        extractedJson = extractJsonFromResponse(stepString.substring(maxOf(0, responseMarkerIdx - 100)))
+                    }
+                }
                 
                 if (extractedJson != null) {
-                    logger.info("Extracted JSON (${extractedJson.length} chars): ${extractedJson.take(200)}...")
+                    logger.info("Extracted JSON (${extractedJson.length} chars): ${extractedJson.take(300)}...")
                     extractedJson
                 } else {
                     logger.warn("Could not extract JSON. Response body was: ${responseBody?.take(500)}")

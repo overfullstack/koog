@@ -93,7 +93,7 @@ fun Application.chatRoutes(chatService: ChatService) {
                         .collect()
                     
                     if (lastEvent != null) {
-                        call.respond(HttpStatusCode.OK, lastEvent!!)
+                        call.respond(HttpStatusCode.OK, lastEvent)
                     } else {
                         call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "No response generated"))
                     }

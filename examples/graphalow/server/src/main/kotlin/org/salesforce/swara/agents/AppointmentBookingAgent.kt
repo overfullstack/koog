@@ -126,7 +126,7 @@ private fun appointmentBookingAgent(
                    - Date and time
                    - Patient name (if provided)
                    - Any special notes or requirements
-                4. Weather information (if provided) with relevant advice
+                4. Location review information (if provided) - ratings, tips, helpful info
                 5. Reminders or preparation instructions if needed
                 6. Contact information or next steps
                 
@@ -179,7 +179,7 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
     val generateConfirmation by node<AppointmentBookingRequest, AppointmentBookingResult> { request ->
         logger.info("${LogColors.APPOINTMENT_BOOKING} ${LogColors.LLM} Generating confirmation message...")
         val appointment = request.appointmentForm
-        val weatherInfo = request.weatherInfo
+        val locationReviewInfo = request.locationReviewInfo
         val workTypeGroupId = request.workTypeGroupId
         
         // Use LLM to generate a professional confirmation message
@@ -196,13 +196,12 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
                             appointment.patientName?.let { item("Patient: $it") }
                             appointment.notes?.let { item("Notes: $it") }
                         }
-                        if (weatherInfo != null) {
-                            header(2, "Weather Information")
+                        if (locationReviewInfo != null) {
+                            header(2, "Location Information")
                             bulleted {
-                                item("Forecast: ${weatherInfo.weather}")
-                                weatherInfo.temperature?.let { item("Temperature: ${it}°C") }
-                                weatherInfo.conditions?.let { item("Conditions: $it") }
-                                weatherInfo.advice?.let { item("Advice: $it") }
+                                item("Review Summary: ${locationReviewInfo.reviewSummary}")
+                                locationReviewInfo.rating?.let { item("Rating: ${it}/5") }
+                                locationReviewInfo.tips?.let { item("Tips: $it") }
                             }
                         }
                         header(2, "Task")
@@ -210,7 +209,7 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
                             item("Generate a professional, friendly confirmation message")
                             item("Include all appointment details")
                             item("Include the Work Type Group ID if provided")
-                            item("Include weather information and travel advice if available")
+                            item("Include location review information if available")
                             item("Add appointment ID: APT-${Uuid.random().toString().take(8).uppercase()}")
                             item("Include reminders about arriving early and cancellation policy")
                         }

@@ -20,18 +20,38 @@ object AppointmentValidationUtils {
 class AppointmentValidationTool : ToolSet {
     private val logger = LoggerFactory.getLogger(AppointmentValidationTool::class.java)
     val dynamicEnv = mutableMapOf<String, String>()
+    
+    // Track which hospital environment is being used
+    var currentHospital: String = "yashoda"
 
     @Tool
     @LLMDescription("Returns a list of available work type groups. Used to validate if a work type group name matches any existing ones.")
     fun validateWorkTypeGroup(
         @LLMDescription("The work type group name to validate (e.g., 'blood test')")
-        workTypeGroupName: String
+        workTypeGroupName: String,
+        @LLMDescription("The hospital/location name (e.g., 'Yashoda', 'Apollo'). Defaults to Yashoda if not specified.")
+        hospitalName: String = "yashoda"
     ): String {
-        logger.info("Fetching work type groups for validation. Requested name: $workTypeGroupName")
+        logger.info("Fetching work type groups for validation. Requested name: $workTypeGroupName, Hospital: $hospitalName")
+        
+        // Store the current hospital for later use
+        currentHospital = hospitalName.lowercase()
         
         try {
             val pmCollectionPaths = "scheduler-e2e/Validate_WorkType_AppointmentType.json"
-            val pmEnvironmentPaths = listOf("scheduler-e2e/Scheduler_Test_Env.json")
+            
+            // Select environment file based on hospital name
+            val envFileName = when {
+                hospitalName.lowercase().contains("apollo") -> "scheduler-e2e/Apollo_Env.json"
+                hospitalName.lowercase().contains("yashoda") -> "scheduler-e2e/Yashoda_Env.json"
+                else -> {
+                    logger.warn("Unknown hospital '$hospitalName', defaulting to Yashoda_Env.json")
+                    "scheduler-e2e/Yashoda_Env.json"
+                }
+            }
+            logger.info("Using environment file: $envFileName for hospital: $hospitalName")
+            
+            val pmEnvironmentPaths = listOf(envFileName)
             
             // Verify files exist
             val collectionFile = File("src/main/resources/$pmCollectionPaths")

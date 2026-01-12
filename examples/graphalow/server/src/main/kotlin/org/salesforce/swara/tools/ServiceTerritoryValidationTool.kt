@@ -30,7 +30,7 @@ class ServiceTerritoryValidationTool : ToolSet {
         
         try {
             val pmCollectionPaths = "scheduler-e2e/Validate_ServiceTerritory.json"
-            val pmEnvironmentPaths = listOf("scheduler-e2e/Scheduler_Test_Env.json")
+            val pmEnvironmentPaths = listOf("scheduler-e2e/Apollo_Env.json")
             
             // Verify files exist
             val collectionFile = java.io.File("src/main/resources/$pmCollectionPaths")

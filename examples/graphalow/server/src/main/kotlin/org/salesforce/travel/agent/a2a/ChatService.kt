@@ -1109,7 +1109,7 @@ class ChatService(
                     val errorMessage = addMessage(
                         sessionId,
                         MessageRole.ASSISTANT,
-                        "I encountered an issue: ${progress.message}\n\nWould you like me to try again?",
+                        "${progress.message} Would you like me to try again?",
                         MessageType.ERROR
                     )
                     emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))

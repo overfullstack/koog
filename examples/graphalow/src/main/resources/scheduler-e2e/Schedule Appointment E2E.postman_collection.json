@@ -1,0 +1,467 @@
+{
+	"info": {
+		"_postman_id": "e567631b-719d-4515-875c-00e260d31f63",
+		"name": "Schedule Appointment E2E",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "23194950"
+	},
+	"item": [
+		{
+			"name": "Login as Admin",
+			"event": [
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var xml2js = require('xml2js')",
+							"xml2js.parseString(pm.response.text(), { explicitArray: false }, (_, jsonResponse) => {",
+							"  let result = jsonResponse['soapenv:Envelope']['soapenv:Body'].loginResponse.result",
+							"  pm.environment.set(\"accessToken\", result.sessionId)",
+							"})"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"content-type": true
+				}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "text/xml"
+					},
+					{
+						"key": "SOAPAction",
+						"value": "login"
+					},
+					{
+						"key": "charset",
+						"value": "UTF-8",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "text/xml",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<env:Envelope xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"\n    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n    xmlns:env=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <env:Body>\n    <n1:login xmlns:n1=\"urn:partner.soap.sforce.com\">\n      <n1:username><![CDATA[{{username}}]]></n1:username>\n      <n1:password><![CDATA[{{commonUserPassword}}]]></n1:password>\n    </n1:login>\n  </env:Body>\n</env:Envelope>"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/services/Soap/u/{{version}}",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"services",
+						"Soap",
+						"u",
+						"{{version}}"
+					]
+				},
+				"description": "Login to Salesforce"
+			},
+			"response": []
+		},
+		{
+			"name": "Service Territory Name",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"pm.environment.set(\"stId\", jsonData.records[0].Id);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}{{versionPath}}/query/?q=SELECT Id FROM ServiceTerritory WHERE Name = '{{stName}}'",
+					"host": [
+						"{{baseUrl}}{{versionPath}}"
+					],
+					"path": [
+						"query",
+						""
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "SELECT Id FROM ServiceTerritory WHERE Name = '{{stName}}'"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Work Type Group Name",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"pm.environment.set(\"wtgId\", jsonData.records[0].Id);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}{{versionPath}}/query/?q=SELECT Id FROM WorkTypeGroup WHERE Name = '{{wtgName}}'",
+					"host": [
+						"{{baseUrl}}{{versionPath}}"
+					],
+					"path": [
+						"query",
+						""
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "SELECT Id FROM WorkTypeGroup WHERE Name = '{{wtgName}}'"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Work Type Id",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"pm.environment.set(\"wtId\", jsonData.records[0].WorkTypeId);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}{{versionPath}}/query/?q=SELECT WorkTypeId FROM WorkTypeGroupMember WHERE WorkTypeGroupId = '{{wtgId}}'",
+					"host": [
+						"{{baseUrl}}{{versionPath}}"
+					],
+					"path": [
+						"query",
+						""
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "SELECT WorkTypeId FROM WorkTypeGroupMember WHERE WorkTypeGroupId = '{{wtgId}}'"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Account Id",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"var jsonData = pm.response.json();",
+							"pm.environment.set(\"accountId\", jsonData.records[0].Id);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}{{versionPath}}/query/?q=SELECT Id FROM Account LIMIT 1",
+					"host": [
+						"{{baseUrl}}{{versionPath}}"
+					],
+					"path": [
+						"query",
+						""
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "SELECT Id FROM Account LIMIT 1"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Available Territory Slots",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"// Extract startTime, endTime from first slot and first SR Id, handle missing/empty gracefully",
+							"let slotStartTime = '';",
+							"let slotEndTime = '';",
+							"let srId = '';",
+							"try {",
+							"    const json = pm.response.json();",
+							"    const territorySlots = json.result.territorySlots || [];",
+							"    if (territorySlots.length > 0 && territorySlots[0].slots.length > 0) {",
+							"        const firstSlot = territorySlots[0].slots[0];",
+							"        if (firstSlot) {",
+							"            firstSlotStartTime = firstSlot.startTime || '';",
+							"            firstSlotEndTime = firstSlot.endTime || '';",
+							"        }",
+							"        srId = firstSlot.resources[0];",
+							"    }",
+							"} catch (e) {",
+							"    // If response is not JSON or structure is unexpected, leave variables as empty strings",
+							"}",
+							"pm.environment.set('slotStartTime', firstSlotStartTime);",
+							"pm.environment.set('slotEndTime', firstSlotEndTime);",
+							"pm.environment.set('srId', srId);",
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"workTypeGroupId\": \"{{wtgId}}\",\n    \"territoryIds\": [\n        \"{{stId}}\"\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}{{versionPath}}/connect/scheduling/available-territory-slots",
+					"host": [
+						"{{baseUrl}}{{versionPath}}"
+					],
+					"path": [
+						"connect",
+						"scheduling",
+						"available-territory-slots"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Service Appointment",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{accessToken}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"serviceAppointment\": {\n        \"parentRecordId\": \"{{accountId}}\",\n        \"workTypeId\": \"{{wtId}}\",\n        \"serviceTerritoryId\": \"{{stId}}\",\n        \"schedStartTime\": \"{{slotStartTime}}\",\n        \"schedEndTime\": \"{{slotEndTime}}\"\n    },\n    \"assignedResources\": [\n        {\n            \"serviceResourceId\": \"{{srId}}\",\n            \"isRequiredResource\": true,\n            \"isPrimaryResource\": true,\n            \"extendedFields\": []\n        }\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}{{versionPath}}/connect/scheduling/service-appointments",
+					"host": [
+						"{{baseUrl}}{{versionPath}}"
+					],
+					"path": [
+						"connect",
+						"scheduling",
+						"service-appointments"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "wtgName",
+			"value": "",
+			"type": "default"
+		},
+		{
+			"key": "stName",
+			"value": "",
+			"type": "default"
+		},
+		{
+			"key": "stId",
+			"value": ""
+		},
+		{
+			"key": "wtgId",
+			"value": ""
+		},
+		{
+			"key": "wtId",
+			"value": ""
+		},
+		{
+			"key": "accountId",
+			"value": ""
+		},
+		{
+			"key": "slotStartTime",
+			"value": ""
+		},
+		{
+			"key": "slotEndTime",
+			"value": ""
+		},
+		{
+			"key": "srId",
+			"value": ""
+		}
+	]
+}

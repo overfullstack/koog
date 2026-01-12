@@ -1,0 +1,236 @@
+{
+	"info": {
+		"_postman_id": "c967e265-4077-4516-a034-87d19b8e2f09",
+		"name": "Koog Test Copy 5",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "50428933",
+		"_collection_link": "https://jthoppil-ecd8d498-7626308.postman.co/workspace/Josson-Joe-Thoppil's-Workspace~538aa9ec-13ff-40a4-850f-1f4e413e452d/collection/50428933-c967e265-4077-4516-a034-87d19b8e2f09?action=share&source=collection_link&creator=50428933"
+	},
+	"item": [
+		{
+			"name": "Auth With Credentials",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const responseBody = pm.response.text();",
+							"const responseXml = pm.response.text();",
+							"const responseJson = xml2Json(responseXml);",
+							"const sessionIdValue = responseJson['soapenv:Envelope']['soapenv:Body'].loginResponse.result.sessionId;",
+							"pm.environment.set(\"sessionID\", sessionIdValue);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "SOAPAction",
+						"value": "login"
+					},
+					{
+						"key": "Content-Type",
+						"value": "text/xml"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n    <soap:Body>\n        <login xmlns=\"urn:partner.soap.sforce.com\">\n            <username>{{username}}</username>\n            <password>{{password}}</password>\n        </login>\n    </soap:Body>\n</soap:Envelope>",
+					"options": {
+						"raw": {
+							"language": "xml"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/services/Soap/u/64.0",
+					"protocol": "https",
+					"host": [
+						"login",
+						"salesforce-com",
+						"1lve4kc9rs3u0u75fbapeq5",
+						"ac",
+						"crm",
+						"dev"
+					],
+					"port": "6101",
+					"path": [
+						"services",
+						"Soap",
+						"u",
+						"64.0"
+					]
+				},
+				"description": "Generated from cURL: curl --location --request POST 'https://login.salesforce.com/services/Soap/u/59.0' \\\n--header 'SOAPAction: login' \\\n--header 'Content-Type: text/xml' \\\n--data-raw '<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n    <soap:Body>\n        <login xmlns=\"urn:partner.soap.sforce.com\">\n            <username>YOUR_SALESFORCE_USERNAME</username>\n            <password>YOUR_PASSWORD_AND_SECURITY_TOKEN</password>\n        </login>\n    </soap:Body>\n</soap:Envelope>'"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Work Type ID from WTG Copy",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const responseJson6 = pm.response.json();",
+							"const workTypeId2 = responseJson6.records[0].WorkTypeId;",
+							"pm.environment.set(\"workTypeID\", workTypeId2);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				},
+				{
+					"listen": "prerequest",
+					"script": {
+						"exec": [
+							""
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{sessionID}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/services/data/v60.0/query/?q=SELECT WorkTypeId, WorkType.Id, WorkType.Name, WorkType.DurationInMinutes FROM WorkTypeGroupMember WHERE WorkTypeGroupId = '{{workTypeGroupID}}'",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"services",
+						"data",
+						"v60.0",
+						"query",
+						""
+					],
+					"query": [
+						{
+							"key": "q",
+							"value": "SELECT WorkTypeId, WorkType.Id, WorkType.Name, WorkType.DurationInMinutes FROM WorkTypeGroupMember WHERE WorkTypeGroupId = '{{workTypeGroupID}}'"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Book Service Appointment Copy",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const responseJson7 = pm.response.json();",
+							"pm.environment.set(\"serviceAppointmentID\", responseJson7.result.serviceAppointmentId);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"user-agent": true,
+					"connection": true,
+					"accept-encoding": true,
+					"accept": true
+				}
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{sessionID}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"serviceAppointment\": {\n        \"schedStartTime\": \"{{startTime}}\",\n        \"schedEndTime\": \"{{endTime}}\",\n        \"parentRecordId\": \"001xx000003GZG3AAO\",\n        \"serviceTerritoryId\": \"{{serviceTerritoryID}}\",\n        \"workTypeId\": \"{{workTypeID}}\",\n        \"extendedFields\": [\n            {\n                \"name\": \"Email\",\n                \"value\": \"rhl.aaadams@salesforce.com\"\n            },\n            {\n                \"name\": \"Phone\",\n                \"value\": \"8053453505\"\n            },\n            {\n                \"name\": \"Comments\",\n                \"value\": \"Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test Salesforce Test\"\n            }\n        ]\n    },\n    \"assignedResources\": [\n        {\n            \"serviceResourceId\": \"{{serviceResourceID}}\",\n            \"isRequiredResource\": true,\n            \"isPrimaryResource\": false\n        }\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}//services/data/v66.0/connect/scheduling/service-appointments",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"",
+						"services",
+						"data",
+						"v66.0",
+						"connect",
+						"scheduling",
+						"service-appointments"
+					]
+				},
+				"description": "Generated from cURL: curl 'https://embassy.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101/aura?r=219&aura.AppointmentBookingConnect.getResourcesNextAvailability=1' \\\n  -H 'accept: */*' \\\n  -H 'accept-language: en-GB,en-US;q=0.9,en;q=0.8' \\\n  -H 'content-type: application/x-www-form-urlencoded; charset=UTF-8' \\\n  -b $'CookieConsentPolicy=0:1; LSKey-c$CookieConsentPolicy=0:1; sid_Client=x000001X8mjx00Y77OCGOe; clientSrc=10.108.150.159; 79eb100099b9a8bf=3:true:.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev; SetupDomainProbePassed=true; flexipageLMTsfa__Account_rec_L=1764523383546; sid=00Dxx00Y77OCGOe\\u0021AQEAQFY14gUxqCvfTCV1DgOvjxshEf9Rv284g1DpEnFyVjiWYQzN6Bw2xkGiZVV.q.hM3Utigy_mnjL0G94RmYxNOezb.caz; flexipageLMTflexipage__default_rec_L=1764343426894; x-sfdc-release-version=Test-260000000-1764568557701' \\\n  -H 'origin: https://embassy.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101' \\\n  -H 'priority: u=1, i' \\\n  -H 'referer: https://embassy.lightning.force-com.1lve4kc9rs3u0u75fbapeq5.ac.crm.dev:6101/lightning/action/quick/Account.Schedule_LWC_Appointment?objectApiName&context=RECORD_DETAIL&recordId=001xx000003GZPjAAO&backgroundContext=%2Flightning%2Fr%2FAccount%2F001xx000003GZPjAAO%2Fview' \\\n  -H 'sec-ch-ua: \"Chromium\";v=\"142\", \"Google Chrome\";v=\"142\", \"Not_A Brand\";v=\"99\"' \\\n  -H 'sec-ch-ua-mobile: ?0' \\\n  -H 'sec-ch-ua-platform: \"macOS\"' \\\n  -H 'sec-fetch-dest: empty' \\\n  -H 'sec-fetch-mode: cors' \\\n  -H 'sec-fetch-site: same-origin' \\\n  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36' \\\n  -H 'x-b3-sampled: 1' \\\n  -H 'x-b3-spanid: a1c2d1117a858ee8' \\\n  -H 'x-b3-traceid: e1998b7e1d187873' \\\n  -H 'x-sfdc-request-id: 2735799190000bcf99' \\\n  --data-raw 'message=%7B%22actions%22%3A%5B%7B%22id%22%3A%222908%3Ba%22%2C%22descriptor%22%3A%22aura%3A%2F%2FAppointmentBookingConnectController%2FACTION%24getResourcesNextAvailability%22%2C%22callingDescriptor%22%3A%22UNKNOWN%22%2C%22params%22%3A%7B%22getResourcesNextAvailabilityInputRepresentation%22%3A%7B%22parentRecordId%22%3A%22001xx000003GZPjAAO%22%2C%22workTypeGroupId%22%3A%220VSxx0000004CDsGAM%22%2C%22territoryId%22%3A%220Hhxx0000004C92CAE%22%2C%22areResourcesSortedByAvailability%22%3Atrue%2C%22appointmentMode%22%3A%22Regular%22%7D%7D%7D%5D%7D&aura.context=%7B%22mode%22%3A%22DEV%22%2C%22fwuid%22%3A%22RlNtRDFERG9nSUo3Y1p5bWV4S2ZhZzRsZkJBZG15X0RhRDRYYk1zN2xuNUExMy4tMjE0NzQ4MzY0OC45OTYxNDcy%22%2C%22app%22%3A%22one%3Aone%22%2C%22loaded%22%3A%7B%22APPLICATION%40markup%3A%2F%2Fone%3Aone%22%3A%224004_bq3eHfodkVhrc05yHDH57Q%22%7D%2C%22dn%22%3A%5B%5D%2C%22globals%22%3A%7B%22density%22%3A%22VIEW_ONE%22%2C%22appContextId%22%3A%2206mxx0000009QFeAAM%22%7D%2C%22uad%22%3Atrue%7D&aura.pageURI=%2Flightning%2Faction%2Fquick%2FAccount.Schedule_LWC_Appointment%3FobjectApiName%26context%3DRECORD_DETAIL%26recordId%3D001xx000003GZPjAAO%26backgroundContext%3D%252Flightning%252Fr%252FAccount%252F001xx000003GZPjAAO%252Fview&aura.token=eyJub25jZSI6IjRDVDNma1kxZTFWQjRkYzJ6WVRuX2NaelRjRVVMTjFCa0FZUHZPRVYxWW9cdTAwM2QiLCJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiIsImtpZCI6IntcInRcIjpcIjAwRHh4MDAwMDAwMWdFSFwiLFwidlwiOlwiMDJHeHgwMDAwMDA1SXk0XCIsXCJhXCI6XCJjYWltYW5zaWduZXJcIn0iLCJjcml0IjpbImlhdCJdLCJpYXQiOjE3NjQ1Njg5NTYxOTIsImV4cCI6MH0%3D..0p7BcNfVAN4S_QSU6WF07yeSO-E2-UXg3HjFZcwjnPE%3D'"
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{sessionID}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}

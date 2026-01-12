@@ -34,7 +34,6 @@ object LogColors {
 
     // Component-specific prefixes with colors
     val TIMESLOT = "$BOLD$BRIGHT_GREEN[TIMESLOT]$RESET"
-    val LOCATION_WEATHER = "$BOLD$CYAN[LOCATION_WEATHER]$RESET"
     val ORCHESTRATOR = "$BOLD$BRIGHT_MAGENTA[ORCHESTRATOR]$RESET"
     val CHAT = "$BOLD$BRIGHT_CYAN[CHAT]$RESET"
     val SESSION = "$CYAN[SESSION]$RESET"
@@ -47,6 +46,11 @@ object LogColors {
     val APPOINTMENT_BOOKING = "$BOLD$MAGENTA[APPOINTMENT_BOOKING]$RESET"
     val VALIDATION = "$BOLD$YELLOW[VALIDATION]$RESET"
     val SERVICE_TERRITORY = "$BOLD$BRIGHT_BLUE[SERVICE_TERRITORY]$RESET"
+    
+    // Separate agent prefixes
+    val TAVILY = "$BOLD$BRIGHT_YELLOW[TAVILY]$RESET"
+    val MAPS = "$BOLD$GREEN[MAPS]$RESET"
+    val WEATHER = "$BOLD$BRIGHT_BLUE[WEATHER]$RESET"
 
     // Utility functions for inline coloring
     fun magenta(text: String): String = "$BRIGHT_MAGENTA$text$RESET"
@@ -65,9 +69,13 @@ object LogColors {
     fun planComposerBanner(text: String): String = "$BOLD$BLUE========== $text ==========$RESET"
     fun serverBanner(text: String): String = "$BOLD$WHITE========== $text ==========$RESET"
     fun chatBanner(text: String): String = "$BOLD$BRIGHT_CYAN========== $text ==========$RESET"
-    fun locationWeatherBanner(text: String): String = "$BOLD$CYAN========== $text ==========$RESET"
     fun appointmentBookingBanner(text: String): String = "$BOLD$MAGENTA========== $text ==========$RESET"
     fun validationBanner(text: String): String = "$BOLD$YELLOW========== $text ==========$RESET"
     fun serviceTerritoryBanner(text: String): String = "$BOLD$BRIGHT_BLUE========== $text ==========$RESET"
     fun timeslotBanner(text: String): String = "$BOLD$BRIGHT_GREEN========== $text ==========$RESET"
+    
+    // Separate agent banners
+    fun tavilyBanner(text: String): String = "$BOLD$BRIGHT_YELLOW========== $text ==========$RESET"
+    fun mapsBanner(text: String): String = "$BOLD$GREEN========== $text ==========$RESET"
+    fun weatherBanner(text: String): String = "$BOLD$BRIGHT_BLUE========== $text ==========$RESET"
 }

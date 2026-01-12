@@ -6,14 +6,12 @@ import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.structure.executeStructured
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.datetime.Clock
 import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
 import org.jetbrains.demo.agent.a2a.AppointmentProgress
 import org.jetbrains.demo.agent.a2a.SchedulerAgentOrchestrator
 import org.jetbrains.demo.agent.a2a.model.*
+import org.jetbrains.demo.agent.a2a.model.BranchInfo
 import org.salesforce.LogColors
 import org.salesforce.travel.LLM_MODEL
 import org.salesforce.travel.agent.a2a.ConversationState
@@ -43,6 +41,10 @@ enum class UserIntent {
     GREETING,
     /** User is asking a question about appointments or the service */
     ASK_QUESTION,
+    /** User accepts a suggestion (responds yes/ok/sure to a suggestion) */
+    ACCEPT_SUGGESTION,
+    /** User declines a suggestion (responds no/cancel to a suggestion) */
+    DECLINE_SUGGESTION,
     /** Intent is unclear or doesn't fit other categories */
     OTHER
 }
@@ -124,6 +126,12 @@ data class ChatSession(
     val partialAppointment: PartialAppointmentInfo? = null,
     val appointmentResult: AppointmentResult? = null,
     val conversationState: ConversationState = ConversationState.GREETING,
+    val pendingSuggestion: WorkTypeSuggestion? = null,
+    val pendingBranchSelection: List<BranchInfo>? = null,
+    val workTypeGroupId: String? = null,
+    val serviceTerritoryId: String? = null,
+    val selectedBranch: BranchInfo? = null,
+    val suggestedTimeslot: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -329,6 +337,268 @@ class ChatService(
 
         // Route based on classified intent
         when {
+            // Handle suggestion response - user accepts or declines the suggestion
+            currentState == ConversationState.AWAITING_SUGGESTION_RESPONSE && 
+            session.pendingSuggestion != null -> {
+                val suggestion = session.pendingSuggestion
+                val originalForm = session.appointmentForm
+                
+                // Detect if user accepts the suggestion
+                val accepts = detectSuggestionAcceptance(request.message)
+                
+                // Check if user is providing new details instead
+                val providingNewDetails = detectNewAppointmentDetails(request.message)
+                
+                when {
+                    accepts && originalForm != null -> {
+                        logger.info("${LogColors.CHAT} User accepted suggestion: ${suggestion.suggestedWorkType} at ${suggestion.suggestedLocation}")
+                        
+                        // Clear the pending suggestion and resume booking with suggestion
+                        sessions.computeIfPresent(sessionId) { _, s ->
+                            s.copy(
+                                pendingSuggestion = null,
+                                conversationState = ConversationState.PLANNING,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        }
+                        
+                        // Resume booking flow with suggestion
+                        handleBookingWithSuggestion(sessionId, userId, originalForm, suggestion)
+                            .collect { emit(it) }
+                    }
+                    
+                    providingNewDetails -> {
+                        logger.info("${LogColors.CHAT} User providing new appointment details instead of accepting suggestion")
+                        
+                        // User wants to provide different details - go to negotiation
+                        sessions.computeIfPresent(sessionId) { _, s ->
+                            s.copy(
+                                pendingSuggestion = null,
+                                appointmentForm = null,
+                                conversationState = ConversationState.COLLECTING_JOURNEY_DETAILS,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        }
+                        
+                        // Extract details from user message and continue negotiation
+                        val partial = PartialAppointmentInfo()
+                        handleNegotiation(sessionId, userId, request.message, partial)
+                            .collect { emit(it) }
+                    }
+                    
+                    else -> {
+                        logger.info("${LogColors.CHAT} User declined suggestion - offering options")
+                        
+                        // Clear the pending suggestion and go back to collecting details
+                        sessions.computeIfPresent(sessionId) { _, s ->
+                            s.copy(
+                                pendingSuggestion = null,
+                                appointmentForm = null,
+                                conversationState = ConversationState.COLLECTING_JOURNEY_DETAILS,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        }
+                        
+                        val response = buildString {
+                            appendLine("No problem! I can help you with a different appointment.")
+                            appendLine()
+                            appendLine("You can either:")
+                            appendLine("• Tell me what appointment type and location you'd prefer")
+                            appendLine("• Or say **\"${suggestion.suggestedWorkType} at ${suggestion.suggestedLocation}\"** if you change your mind")
+                            appendLine()
+                            appendLine("What would you like to book?")
+                        }
+                        val assistantMessage = addMessage(sessionId, MessageRole.ASSISTANT, response)
+                        emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = assistantMessage))
+                        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+                    }
+                }
+            }
+            
+            // Handle branch selection response
+            currentState == ConversationState.AWAITING_BRANCH_SELECTION &&
+            session.pendingBranchSelection != null -> {
+                val branches = session.pendingBranchSelection
+                val form = session.appointmentForm
+                val workTypeGroupId = session.workTypeGroupId
+                
+                if (form == null || workTypeGroupId == null) {
+                    logger.error("${LogColors.CHAT} Missing form or workTypeGroupId for branch selection")
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "Session data missing. Please start over.",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+                    return@flow
+                }
+                
+                // Detect if user wants closest branch
+                val wantsClosest = detectClosestBranchRequest(request.message)
+                
+                // Detect which branch user selected
+                val selectedBranch = if (wantsClosest) {
+                    logger.info("${LogColors.CHAT} User wants closest branch - finding closest...")
+                    
+                    // Extract user's location from message
+                    val userLocation = extractUserLocation(request.message)
+                    
+                    if (userLocation == null) {
+                        // Ask user for their location
+                        logger.info("${LogColors.CHAT} Could not extract user location, asking for it...")
+                        val askLocationMessage = addMessage(
+                            sessionId,
+                            MessageRole.ASSISTANT,
+                            "I'd be happy to find the closest branch for you! 📍\n\n" +
+                            "**Please tell me your current location** so I can calculate distances.\n\n" +
+                            "For example:\n" +
+                            "• \"I am at Jubilee Hills, Hyderabad\"\n" +
+                            "• \"My location is Banjara Hills\"\n" +
+                            "• \"I'm near Gachibowli\"",
+                            MessageType.TEXT
+                        )
+                        emit(ChatStreamEvent(
+                            sessionId = sessionId,
+                            type = "branch_selection",
+                            message = askLocationMessage,
+                            awaitingResponse = true
+                        ))
+                        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                        return@flow
+                    }
+                    
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📍 Finding the closest branch to '$userLocation' using Maps..."
+                    ))
+                    
+                    // Find closest branch using Maps agent (with progress updates)
+                    val (closestBranch, branchesWithDistances) = orchestrator.findClosestBranch(
+                        userLocation, 
+                        branches
+                    ) { progressMessage ->
+                        // Emit progress updates to the client
+                        emit(ChatStreamEvent(
+                            sessionId = sessionId,
+                            type = "progress",
+                            content = progressMessage
+                        ))
+                    }
+                    
+                    // Show summary of all distances and travel times
+                    if (branchesWithDistances.isNotEmpty()) {
+                        val distanceSummary = buildString {
+                            appendLine("📊 **Distance & Travel Time Summary:**")
+                            branchesWithDistances
+                                .filter { it.distanceKm != null && it.distanceKm != Double.MAX_VALUE }
+                                .sortedBy { it.travelTimeMinutes ?: it.distanceKm?.times(2)?.toInt() ?: Int.MAX_VALUE }
+                                .forEach { branch ->
+                                    val timeStr = branch.travelTimeMinutes?.let { " (~$it min)" } ?: ""
+                                    appendLine("• ${branch.branchName}: ${"%.2f".format(branch.distanceKm)} km$timeStr")
+                                }
+                        }
+                        emit(ChatStreamEvent(
+                            sessionId = sessionId,
+                            type = "progress",
+                            content = distanceSummary
+                        ))
+                        
+                        // Store travel time of closest branch for timeslot suggestions
+                        closestBranch?.travelTimeMinutes?.let { travelTime ->
+                            sessions.computeIfPresent(sessionId) { _, s ->
+                                s.copy(
+                                    // Store travel time for later use in timeslot suggestions
+                                    updatedAt = System.currentTimeMillis()
+                                )
+                            }
+                            logger.info("${LogColors.CHAT} Closest branch travel time: $travelTime minutes (can be used for timeslot suggestions)")
+                        }
+                    }
+                    
+                    closestBranch ?: branches.first()
+                } else {
+                    // Try to match branch by name from user's message
+                    matchBranchFromMessage(request.message, branches) ?: branches.first()
+                }
+                
+                logger.info("${LogColors.CHAT} User selected branch: ${selectedBranch.branchName}")
+                
+                // Clear pending branch selection and continue booking
+                sessions.computeIfPresent(sessionId) { _, s ->
+                    s.copy(
+                        pendingBranchSelection = null,
+                        conversationState = ConversationState.PLANNING,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                }
+                
+                val confirmMessage = addMessage(
+                    sessionId,
+                    MessageRole.ASSISTANT,
+                    "✅ Great! You've selected **${selectedBranch.branchName}**${selectedBranch.distanceKm?.let { " (%.1f km away)".format(it) } ?: ""}. Continuing with the booking...",
+                    MessageType.THINKING
+                )
+                emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = confirmMessage))
+                
+                // Continue booking with selected branch
+                handleBookingWithBranch(sessionId, userId, form, selectedBranch, workTypeGroupId)
+                    .collect { emit(it) }
+            }
+            
+            // Handle timeslot confirmation response
+            currentState == ConversationState.AWAITING_TIMESLOT_CONFIRMATION -> {
+                val form = session.appointmentForm
+                val workTypeGroupId = session.workTypeGroupId
+                val serviceTerritoryId = session.serviceTerritoryId
+                val selectedBranch = session.selectedBranch
+                val suggestedTimeslot = session.suggestedTimeslot // Get the suggested time from the prompt
+                
+                if (form == null || workTypeGroupId == null || serviceTerritoryId == null || selectedBranch == null) {
+                    logger.error("${LogColors.CHAT} Missing data for timeslot confirmation")
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "Session data missing. Please start over.",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+                    return@flow
+                }
+                
+                // Parse user's preferred time from their message
+                // If user just says "yes", use the suggested time from the prompt
+                val userTime = parsePreferredTime(request.message)
+                val preferredTime = userTime ?: suggestedTimeslot
+                
+                logger.info("${LogColors.CHAT} Timeslot confirmation - User input: '${request.message}', Parsed: $userTime, Suggested: $suggestedTimeslot, Using: $preferredTime")
+                
+                // Clear state and continue
+                sessions.computeIfPresent(sessionId) { _, s ->
+                    s.copy(
+                        suggestedTimeslot = null,
+                        conversationState = ConversationState.PLANNING,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                }
+                
+                val displayTime = preferredTime ?: "the suggested time"
+                val confirmMessage = addMessage(
+                    sessionId,
+                    MessageRole.ASSISTANT,
+                    "✅ Got it! Searching for available slots around $displayTime...",
+                    MessageType.THINKING
+                )
+                emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = confirmMessage))
+                
+                // Continue booking with timeslot confirmation
+                handleBookingWithTimeslotConfirmation(sessionId, userId, form, selectedBranch, workTypeGroupId, serviceTerritoryId, preferredTime)
+                    .collect { emit(it) }
+            }
+            
             // New conversation - greet
             currentState == ConversationState.GREETING && appointmentForm == null && 
             classification.intent == UserIntent.GREETING -> {
@@ -430,6 +700,692 @@ class ChatService(
     
     private fun String.containsAny(vararg keywords: String): Boolean = 
         keywords.any { this.contains(it, ignoreCase = true) }
+    
+    /**
+     * Detect if user's message indicates acceptance of a suggestion.
+     */
+    private fun detectSuggestionAcceptance(message: String): Boolean {
+        val lowerMessage = message.lowercase().trim()
+        val acceptKeywords = listOf("yes", "yeah", "yep", "sure", "ok", "okay", "proceed", "go ahead", "book it", "let's do it", "confirm", "accept")
+        val declineKeywords = listOf("no", "nope", "cancel", "decline", "don't", "different", "other", "change")
+        
+        // Check for decline keywords first
+        if (declineKeywords.any { lowerMessage.contains(it) }) {
+            return false
+        }
+        
+        // Check for accept keywords
+        return acceptKeywords.any { lowerMessage.contains(it) }
+    }
+    
+    /**
+     * Detect if user wants the closest branch.
+     */
+    private fun detectClosestBranchRequest(message: String): Boolean {
+        val lowerMessage = message.lowercase().trim()
+        val closestKeywords = listOf("closest", "nearest", "close", "near", "nearby", "find closest", "get closest")
+        return closestKeywords.any { lowerMessage.contains(it) }
+    }
+    
+    /**
+     * Extract user's current location from their message.
+     * Returns null if no valid location can be extracted.
+     */
+    private fun extractUserLocation(message: String): String? {
+        // Try to extract location after common phrases
+        val patterns = listOf(
+            "i am at (.+)",
+            "i'm at (.+)",
+            "currently at (.+)",
+            "i am in (.+)",
+            "i'm in (.+)",
+            "from (.+)",
+            "near (.+)",
+            "located at (.+)",
+            "location is (.+)",
+            "my location is (.+)",
+            "at (.+)"
+        )
+        
+        val lowerMessage = message.lowercase()
+        for (pattern in patterns) {
+            val regex = Regex(pattern, RegexOption.IGNORE_CASE)
+            val match = regex.find(lowerMessage)
+            if (match != null) {
+                val location = cleanupLocation(match.groupValues[1])
+                // Only return if we got a meaningful location (at least 3 chars)
+                if (location.length >= 3 && !isGenericPhrase(location)) {
+                    return location
+                }
+            }
+        }
+        
+        // Try to find location after keywords
+        val locationKeywords = listOf("in ", "at ", "from ", "near ")
+        for (keyword in locationKeywords) {
+            val idx = lowerMessage.lastIndexOf(keyword)
+            if (idx >= 0) {
+                val remaining = cleanupLocation(message.substring(idx + keyword.length))
+                if (remaining.length >= 3 && !isGenericPhrase(remaining)) {
+                    return remaining
+                }
+            }
+        }
+        
+        // Return null if we couldn't extract a valid location
+        return null
+    }
+    
+    /**
+     * Clean up extracted location by removing trailing junk.
+     */
+    private fun cleanupLocation(raw: String): String {
+        var location = raw.trim()
+        
+        // Remove common trailing phrases
+        val trailingPhrases = listOf(
+            "find closest", "get closest", "find the closest", "get the closest",
+            "find nearest", "get nearest", "find the nearest", "get the nearest",
+            "closest branch", "nearest branch", "closest one", "nearest one",
+            "please", "thanks", "thank you", "can you", "could you"
+        )
+        for (phrase in trailingPhrases) {
+            location = location.replace(Regex("\\s*\\.?\\s*$phrase.*", RegexOption.IGNORE_CASE), "")
+        }
+        
+        // Cut off at sentence boundaries if there's trailing text
+        val sentenceEnd = location.indexOfAny(charArrayOf('.', '!', '?'))
+        if (sentenceEnd > 0) {
+            location = location.substring(0, sentenceEnd)
+        }
+        
+        // Remove trailing punctuation and common words
+        location = location
+            .replace(Regex("[.,!?;:]+$"), "")
+            .replace(Regex("\\s+(and|or|the|a|an|to|for|is|are)\\s*$", RegexOption.IGNORE_CASE), "")
+            .trim()
+        
+        return location
+    }
+    
+    /**
+     * Check if the extracted text is just a generic phrase (not a real location).
+     */
+    private fun isGenericPhrase(text: String): Boolean {
+        val genericPhrases = listOf(
+            "can you find", "could you find", "please find", "find the", "get the",
+            "the closest", "the nearest", "closest", "nearest", "branch", "hospital",
+            "one", "it", "that", "this", "me"
+        )
+        return genericPhrases.any { text.lowercase().trim() == it.lowercase() }
+    }
+    
+    /**
+     * Parse user's preferred time from their message.
+     * Returns null if user says "yes" or just confirms without a time, otherwise extracts time.
+     */
+    private fun parsePreferredTime(message: String): String? {
+        val lowerMessage = message.lowercase().trim()
+        
+        // First, try to extract specific time mentions - do this BEFORE checking for confirmations
+        // so that "yes, 2pm" extracts "2pm" instead of being treated as just "yes"
+        val timePatterns = listOf(
+            Regex("""(\d{1,2}:\d{2}\s*(?:am|pm))""", RegexOption.IGNORE_CASE),
+            Regex("""(\d{1,2}\s*(?:am|pm))""", RegexOption.IGNORE_CASE),
+            Regex("""(morning|afternoon|evening|noon)""", RegexOption.IGNORE_CASE)
+        )
+        
+        for (pattern in timePatterns) {
+            val match = pattern.find(lowerMessage)
+            if (match != null) {
+                logger.info("${LogColors.CHAT} Extracted time from user message: '${match.value}'")
+                return match.value
+            }
+        }
+        
+        // Check for "any time" type responses
+        if (lowerMessage.contains("any time") || lowerMessage.contains("anytime") || lowerMessage.contains("whenever")) {
+            return "any available time"
+        }
+        
+        // If message contains time-related words, return the whole message as context
+        val timeKeywords = listOf("am", "pm", "o'clock", "oclock", "hour", "around")
+        if (timeKeywords.any { lowerMessage.contains(it) }) {
+            logger.info("${LogColors.CHAT} Found time keyword in message, returning full message: '$message'")
+            return message.trim()
+        }
+        
+        // If user just says yes/ok/sure (without any time), use the suggested time (return null)
+        val confirmationPhrases = listOf("yes", "yeah", "yep", "ok", "okay", "sure", "sounds good", "that works", "perfect", "great", "go ahead", "proceed")
+        if (confirmationPhrases.any { lowerMessage == it || lowerMessage.startsWith("$it.") || lowerMessage.startsWith("$it!") }) {
+            logger.info("${LogColors.CHAT} User confirmed without specific time, using suggested time")
+            return null
+        }
+        
+        // Check for date patterns like "tomorrow", "today"
+        val datePatterns = listOf(
+            Regex("""(tomorrow|today|next week)""", RegexOption.IGNORE_CASE)
+        )
+        for (pattern in datePatterns) {
+            val match = pattern.find(lowerMessage)
+            if (match != null) {
+                logger.info("${LogColors.CHAT} Found date reference: '${match.value}'")
+                return match.value
+            }
+        }
+        
+        // Default: use suggested time
+        logger.info("${LogColors.CHAT} No time extracted from message, using suggested time")
+        return null
+    }
+    
+    /**
+     * Match a branch name from user's message.
+     */
+    private fun matchBranchFromMessage(message: String, branches: List<BranchInfo>): BranchInfo? {
+        val lowerMessage = message.lowercase()
+        
+        // Try to find a branch that matches the user's message
+        for (branch in branches) {
+            val branchName = branch.branchName.lowercase()
+            val branchAddress = branch.address?.lowercase() ?: ""
+            
+            // Check if branch name or address is mentioned
+            if (lowerMessage.contains(branchName) || 
+                branchAddress.isNotEmpty() && lowerMessage.contains(branchAddress)) {
+                return branch
+            }
+            
+            // Check for partial matches (e.g., "Jubilee Hills" matches "Apollo Hospitals - Jubilee Hills")
+            val parts = branchName.split("-", " ").filter { it.length > 3 }
+            for (part in parts) {
+                if (lowerMessage.contains(part.trim())) {
+                    return branch
+                }
+            }
+        }
+        
+        // Try to match by number (e.g., "1" or "first" or "option 1")
+        val numberMatch = Regex("\\b(\\d+)\\b").find(lowerMessage)
+        if (numberMatch != null) {
+            val index = numberMatch.groupValues[1].toIntOrNull()
+            if (index != null && index >= 1 && index <= branches.size) {
+                return branches[index - 1]
+            }
+        }
+        
+        return null
+    }
+    
+    /**
+     * Handle booking flow with a selected branch.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private fun handleBookingWithBranch(
+        sessionId: String,
+        userId: String?,
+        appointmentForm: AppointmentForm,
+        selectedBranch: BranchInfo,
+        workTypeGroupId: String
+    ): Flow<ChatStreamEvent> = flow {
+        logger.info("${LogColors.CHAT} Continuing booking with branch: ${selectedBranch.branchName}")
+        
+        var finalResult: AppointmentResult? = null
+        
+        // Stream progress updates from orchestrator with branch selection
+        orchestrator.bookAppointmentWithBranchSelection(appointmentForm, selectedBranch, workTypeGroupId).collect { progress ->
+            when (progress) {
+                is AppointmentProgress.BranchSelectionComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ ${progress.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingServiceTerritory -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📍 Validating service territory..."
+                    ))
+                }
+                
+                is AppointmentProgress.ServiceTerritoryValidationComplete -> {
+                    // Store the service territory ID for later use
+                    val stId = progress.validationResult.serviceTerritoryId ?: selectedBranch.serviceTerritoryId
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            serviceTerritoryId = stId,
+                            selectedBranch = selectedBranch,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Service territory validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.PromptTimeslotConfirmation -> {
+                    // Store suggested time and update state
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            suggestedTimeslot = progress.suggestedTime,
+                            conversationState = ConversationState.AWAITING_TIMESLOT_CONFIRMATION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val timeslotMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "timeslot_confirmation",
+                        message = timeslotMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.TimeslotConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Looking for slots around ${progress.confirmedTime}..."
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingTimeslot -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "⏰ Validating timeslot availability..."
+                    ))
+                }
+                
+                is AppointmentProgress.TimeslotValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Timeslot validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.BookingAppointment -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📝 Booking your appointment..."
+                    ))
+                }
+                
+                is AppointmentProgress.BookingComplete -> {
+                    finalResult = progress.result
+                    logger.info("${LogColors.CHAT} Booking with branch complete in ${progress.totalDurationMs}ms")
+                }
+                
+                is AppointmentProgress.Error -> {
+                    logger.error("${LogColors.CHAT} Booking error: ${progress.message}")
+                    updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
+                    
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "${progress.message} Would you like me to try again?",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+                
+                else -> {
+                    logger.debug("${LogColors.CHAT} Unhandled progress event in branch selection flow: ${progress::class.simpleName}")
+                }
+            }
+        }
+        
+        // Handle final result
+        finalResult?.let { result ->
+            sessions.computeIfPresent(sessionId) { _, s ->
+                s.copy(
+                    appointmentResult = result,
+                    conversationState = ConversationState.PRESENTING_PLAN,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            
+            val resultMessage = addMessage(sessionId, MessageRole.ASSISTANT, result.bookingMessage, MessageType.APPOINTMENT_RESULT)
+            emit(ChatStreamEvent(
+                sessionId = sessionId,
+                type = "appointment_result",
+                message = resultMessage,
+                appointmentResult = result
+            ))
+        }
+        
+        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+    }
+    
+    /**
+     * Handle booking flow after user confirms timeslot preference.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private fun handleBookingWithTimeslotConfirmation(
+        sessionId: String,
+        userId: String?,
+        appointmentForm: AppointmentForm,
+        selectedBranch: BranchInfo,
+        workTypeGroupId: String,
+        serviceTerritoryId: String,
+        preferredTime: String?
+    ): Flow<ChatStreamEvent> = flow {
+        logger.info("${LogColors.CHAT} Continuing booking with timeslot confirmation: ${preferredTime ?: "suggested time"}")
+        
+        var finalResult: AppointmentResult? = null
+        
+        // Stream progress updates from orchestrator with timeslot confirmation
+        orchestrator.bookAppointmentWithTimeslotConfirmation(
+            appointmentForm, selectedBranch, workTypeGroupId, serviceTerritoryId, preferredTime
+        ).collect { progress ->
+            when (progress) {
+                is AppointmentProgress.TimeslotConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Searching for slots around ${progress.confirmedTime}..."
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingTimeslot -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "⏰ Checking available timeslots..."
+                    ))
+                }
+                
+                is AppointmentProgress.TimeslotValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Timeslot validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.BookingAppointment -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📝 Booking your appointment..."
+                    ))
+                }
+                
+                is AppointmentProgress.BookingComplete -> {
+                    finalResult = progress.result
+                    logger.info("${LogColors.CHAT} Booking complete in ${progress.totalDurationMs}ms")
+                }
+                
+                is AppointmentProgress.Error -> {
+                    logger.error("${LogColors.CHAT} Booking error: ${progress.message}")
+                    updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
+                    
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "${progress.message} Would you like me to try again?",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+                
+                else -> {
+                    logger.debug("${LogColors.CHAT} Unhandled progress event in timeslot confirmation flow: ${progress::class.simpleName}")
+                }
+            }
+        }
+        
+        // Handle final result
+        finalResult?.let { result ->
+            sessions.computeIfPresent(sessionId) { _, s ->
+                s.copy(
+                    appointmentResult = result,
+                    conversationState = ConversationState.PRESENTING_PLAN,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            
+            val resultMessage = addMessage(sessionId, MessageRole.ASSISTANT, result.bookingMessage, MessageType.APPOINTMENT_RESULT)
+            emit(ChatStreamEvent(
+                sessionId = sessionId,
+                type = "appointment_result",
+                message = resultMessage,
+                appointmentResult = result
+            ))
+        }
+        
+        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+    }
+    
+    /**
+     * Detect if user's message contains new appointment details (not just yes/no).
+     * This helps identify when user wants to specify a different appointment instead of accepting/declining.
+     */
+    private fun detectNewAppointmentDetails(message: String): Boolean {
+        val lowerMessage = message.lowercase().trim()
+        
+        // Keywords that indicate user is specifying appointment details
+        val appointmentKeywords = listOf(
+            "blood test", "mri", "ct scan", "x-ray", "diagnostic", "ultrasound",
+            "hospital", "clinic", "medical center", "healthcare",
+            "tomorrow", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+            "morning", "afternoon", "evening", "pm", "am",
+            "book", "schedule", "appointment"
+        )
+        
+        // Check if message is longer and contains specific details
+        val hasAppointmentKeywords = appointmentKeywords.any { lowerMessage.contains(it) }
+        val isLongEnough = message.split(" ").size >= 3
+        
+        return hasAppointmentKeywords && isLongEnough
+    }
+    
+    /**
+     * Handle booking flow with an accepted suggestion.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private fun handleBookingWithSuggestion(
+        sessionId: String,
+        userId: String?,
+        originalForm: AppointmentForm,
+        suggestion: WorkTypeSuggestion
+    ): Flow<ChatStreamEvent> = flow {
+        logger.info("${LogColors.CHAT} Resuming booking with suggestion: ${suggestion.suggestedWorkType} at ${suggestion.suggestedLocation}")
+        
+        val introContent = buildString {
+            appendLine("✅ Great choice! Let me book your **${suggestion.suggestedWorkType}** appointment at **${suggestion.suggestedLocation}**.")
+            appendLine()
+            appendLine("Continuing with the booking process...")
+        }
+        
+        val introMessage = addMessage(sessionId, MessageRole.ASSISTANT, introContent, MessageType.THINKING)
+        emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = introMessage))
+        
+        var finalResult: AppointmentResult? = null
+        
+        // Stream progress updates from orchestrator with suggestion
+        orchestrator.bookAppointmentWithSuggestion(originalForm, suggestion).collect { progress ->
+            when (progress) {
+                is AppointmentProgress.SuggestionAccepted -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Using suggested appointment: ${progress.suggestion.suggestedWorkType} at ${progress.suggestion.suggestedLocation}"
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingAppointment -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Validating suggested appointment type..."
+                    ))
+                }
+                
+                is AppointmentProgress.ValidationComplete -> {
+                    // Store workTypeGroupId if validation was successful
+                    if (progress.validationResult.isValid && progress.validationResult.workTypeGroupId != null) {
+                        // Also update the appointment form with the suggestion values
+                        val updatedForm = originalForm.copy(
+                            appointmentGroup = suggestion.suggestedWorkType,
+                            location = suggestion.suggestedLocation
+                        )
+                        sessions.computeIfPresent(sessionId) { _, s ->
+                            s.copy(
+                                workTypeGroupId = progress.validationResult.workTypeGroupId,
+                                appointmentForm = updatedForm,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        }
+                    }
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.FetchingBranches -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🏥 Fetching available branches..."
+                    ))
+                }
+                
+                is AppointmentProgress.PromptBranchSelection -> {
+                    val branches = progress.availableBranches
+                    logger.info("${LogColors.CHAT} Branch selection prompt (from suggestion flow): ${branches.size} branches available")
+                    
+                    // Store the pending branches in the session
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingBranchSelection = branches,
+                            pendingSuggestion = null, // Clear suggestion since it's been accepted
+                            conversationState = ConversationState.AWAITING_BRANCH_SELECTION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val branchMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "branch_selection",
+                        message = branchMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.ValidatingServiceTerritory -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📍 Validating service territory..."
+                    ))
+                }
+                
+                is AppointmentProgress.ServiceTerritoryValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Service territory validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.ValidatingTimeslot -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "⏰ Validating timeslot availability..."
+                    ))
+                }
+                
+                is AppointmentProgress.TimeslotValidationComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Timeslot validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.BookingAppointment -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📝 Booking your appointment..."
+                    ))
+                }
+                
+                is AppointmentProgress.BookingComplete -> {
+                    finalResult = progress.result
+                    logger.info("${LogColors.CHAT} Booking with suggestion complete in ${progress.totalDurationMs}ms")
+                }
+                
+                is AppointmentProgress.Error -> {
+                    logger.error("${LogColors.CHAT} Booking error: ${progress.message}")
+                    updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
+                    
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "${progress.message} Would you like me to try again?",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+                
+                // Other progress events (not expected in this flow but handle gracefully)
+                else -> {
+                    logger.debug("${LogColors.CHAT} Unhandled progress event in suggestion flow: ${progress::class.simpleName}")
+                }
+            }
+        }
+        
+        // Handle final result
+        finalResult?.let { result ->
+            sessions.computeIfPresent(sessionId) { _, s ->
+                s.copy(
+                    appointmentResult = result,
+                    conversationState = ConversationState.PRESENTING_PLAN,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            
+            val resultMessage = addMessage(sessionId, MessageRole.ASSISTANT, result.bookingMessage, MessageType.APPOINTMENT_RESULT)
+            emit(ChatStreamEvent(
+                sessionId = sessionId,
+                type = "appointment_result",
+                message = resultMessage,
+                appointmentResult = result
+            ))
+        }
+        
+        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+    }
     
     private suspend fun buildGreeting(): String = buildString {
         appendLine("Hello! I'm your hospital appointment booking assistant. 🏥")
@@ -577,13 +1533,12 @@ class ChatService(
      */
     @OptIn(ExperimentalUuidApi::class)
     private fun buildAppointmentFormFromPartial(partial: PartialAppointmentInfo): AppointmentForm {
-        val now = Clock.System.now()
-        val tz = TimeZone.currentSystemDefault()
+        val now = java.time.LocalDateTime.now()
         
         // Parse appointment time or default to tomorrow at 2 PM
-        val defaultTime = (now + 1.days).toLocalDateTime(tz)
-        val appointmentTime = parseAppointmentDateTime(partial.date, partial.timeOfDay)
-            ?: LocalDateTime(defaultTime.year, defaultTime.monthNumber, defaultTime.dayOfMonth, 14, 0)
+        val tomorrow = now.plusDays(1)
+        val defaultTime = LocalDateTime(tomorrow.year, tomorrow.month, tomorrow.dayOfMonth, 14, 0)
+        val appointmentTime = parseAppointmentDateTime(partial.date, partial.timeOfDay) ?: defaultTime
         
         return AppointmentForm(
             appointmentGroup = partial.appointmentGroup ?: "Unknown Appointment Type",
@@ -595,23 +1550,26 @@ class ChatService(
     }
     
     private fun parseAppointmentDateTime(dateStr: String?, timeStr: String?): LocalDateTime? {
-        val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        val jnow = java.time.LocalDateTime.now()
+        val now = LocalDateTime(jnow.year, jnow.month, jnow.dayOfMonth, jnow.hour, jnow.minute)
         
         // Parse relative dates
         dateStr?.let { date ->
             val dateLower = date.lowercase()
             when {
                 dateLower.contains("tomorrow") -> {
-                    val tomorrow = LocalDateTime(now.year, now.monthNumber, now.dayOfMonth + 1, now.hour, now.minute)
-                    return parseTime(timeStr, tomorrow) ?: LocalDateTime(tomorrow.year, tomorrow.monthNumber, tomorrow.dayOfMonth, 14, 0)
+                    val jtomorrow = jnow.plusDays(1)
+                    val tomorrow = LocalDateTime(jtomorrow.year, jtomorrow.month, jtomorrow.dayOfMonth, jtomorrow.hour, jtomorrow.minute)
+                    return parseTime(timeStr, tomorrow) ?: LocalDateTime(tomorrow.year, tomorrow.month, tomorrow.day, 14, 0)
                 }
                 dateLower.contains("today") -> {
-                    return parseTime(timeStr, now) ?: LocalDateTime(now.year, now.monthNumber, now.dayOfMonth, 14, 0)
+                    return parseTime(timeStr, now) ?: LocalDateTime(now.year, now.month, now.day, 14, 0)
                 }
                 dateLower.contains("next") -> {
                     // Simple: add 7 days
-                    val nextWeek = LocalDateTime(now.year, now.monthNumber, now.dayOfMonth + 7, now.hour, now.minute)
-                    return parseTime(timeStr, nextWeek) ?: LocalDateTime(nextWeek.year, nextWeek.monthNumber, nextWeek.dayOfMonth, 14, 0)
+                    val jnextWeek = jnow.plusDays(7)
+                    val nextWeek = LocalDateTime(jnextWeek.year, jnextWeek.month, jnextWeek.dayOfMonth, jnextWeek.hour, jnextWeek.minute)
+                    return parseTime(timeStr, nextWeek) ?: LocalDateTime(nextWeek.year, nextWeek.month, nextWeek.day, 14, 0)
                 }
             }
         }
@@ -619,9 +1577,9 @@ class ChatService(
         // Try parsing specific date
         return try {
             val date = dateStr?.let { LocalDateTime.parse(it) } ?: now
-            parseTime(timeStr, date) ?: LocalDateTime(date.year, date.monthNumber, date.dayOfMonth, 14, 0)
+            parseTime(timeStr, date) ?: LocalDateTime(date.year, date.month, date.day, 14, 0)
         } catch (_: Exception) {
-            parseTime(timeStr, now) ?: LocalDateTime(now.year, now.monthNumber, now.dayOfMonth, 14, 0)
+            parseTime(timeStr, now) ?: LocalDateTime(now.year, now.month, now.day, 14, 0)
         }
     }
     
@@ -631,9 +1589,9 @@ class ChatService(
         
         // Parse time of day
         when {
-            timeLower.contains("morning") -> return LocalDateTime(baseDate.year, baseDate.monthNumber, baseDate.dayOfMonth, 9, 0)
-            timeLower.contains("afternoon") -> return LocalDateTime(baseDate.year, baseDate.monthNumber, baseDate.dayOfMonth, 14, 0)
-            timeLower.contains("evening") -> return LocalDateTime(baseDate.year, baseDate.monthNumber, baseDate.dayOfMonth, 18, 0)
+            timeLower.contains("morning") -> return LocalDateTime(baseDate.year, baseDate.month, baseDate.day, 9, 0)
+            timeLower.contains("afternoon") -> return LocalDateTime(baseDate.year, baseDate.month, baseDate.day, 14, 0)
+            timeLower.contains("evening") -> return LocalDateTime(baseDate.year, baseDate.month, baseDate.day, 18, 0)
         }
         
         // Try parsing specific time like "2 PM" or "14:00"
@@ -646,7 +1604,7 @@ class ChatService(
             if (ampm == "pm" && hour != 12) hour += 12
             if (ampm == "am" && hour == 12) hour = 0
             
-            return LocalDateTime(baseDate.year, baseDate.monthNumber, baseDate.dayOfMonth, hour, minute)
+            return LocalDateTime(baseDate.year, baseDate.month, baseDate.day, hour, minute)
         }
         
         return null
@@ -693,6 +1651,15 @@ class ChatService(
                 }
                 
                 is AppointmentProgress.ValidationComplete -> {
+                    // Store workTypeGroupId if validation was successful
+                    if (progress.validationResult.isValid && progress.validationResult.workTypeGroupId != null) {
+                        sessions.computeIfPresent(sessionId) { _, s ->
+                            s.copy(
+                                workTypeGroupId = progress.validationResult.workTypeGroupId,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        }
+                    }
                     emit(ChatStreamEvent(
                         sessionId = sessionId, 
                         type = "progress", 
@@ -732,20 +1699,12 @@ class ChatService(
                     ))
                 }
                 
-                is AppointmentProgress.CheckingLocationWeather -> {
-                    emit(ChatStreamEvent(
-                        sessionId = sessionId, 
-                        type = "progress", 
-                        content = "📍 Checking location and weather..."
-                    ))
+                is AppointmentProgress.CheckingLocationReviews -> {
+                    // Location reviews step removed - only used for suggestions now
                 }
                 
-                is AppointmentProgress.LocationWeatherComplete -> {
-                    emit(ChatStreamEvent(
-                        sessionId = sessionId, 
-                        type = "progress", 
-                        content = "✅ Weather checked: ${progress.weatherInfo.weather}"
-                    ))
+                is AppointmentProgress.LocationReviewsComplete -> {
+                    // Location reviews step removed - only used for suggestions now
                 }
                 
                 is AppointmentProgress.BookingAppointment -> {
@@ -768,10 +1727,177 @@ class ChatService(
                     val errorMessage = addMessage(
                         sessionId,
                         MessageRole.ASSISTANT,
-                        "I encountered an issue: ${progress.message}\n\nWould you like me to try again?",
+                        "${progress.message} Would you like me to try again?",
                         MessageType.ERROR
                     )
                     emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+                
+                is AppointmentProgress.SearchingForSuggestions -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🔍 The requested work type is not available. Searching for suggestions..."
+                    ))
+                }
+                
+                is AppointmentProgress.SuggestionFound -> {
+                    val suggestion = progress.suggestion
+                    logger.info("${LogColors.CHAT} Suggestion found: ${suggestion.suggestedWorkType} at ${suggestion.suggestedLocation}")
+                    
+                    // Store the pending suggestion in the session
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingSuggestion = suggestion,
+                            conversationState = ConversationState.AWAITING_SUGGESTION_RESPONSE,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    // Build suggestion message with reviews
+                    val suggestionContent = buildString {
+                        appendLine("⚠️ **${suggestion.suggestionMessage}**")
+                        appendLine()
+                        suggestion.locationReviews?.let { reviews ->
+                            appendLine("📋 **Reviews for ${suggestion.suggestedLocation}:**")
+                            appendLine(reviews.reviewSummary)
+                            reviews.rating?.let { appendLine("\n⭐ **Rating:** $it/5") }
+                            if (reviews.highlights.isNotEmpty()) {
+                                appendLine("\n✅ **Highlights:** ${reviews.highlights.joinToString(", ")}")
+                            }
+                            reviews.tips?.let { appendLine("\n💡 **Tips:** $it") }
+                        }
+                        appendLine()
+                        appendLine("---")
+                        appendLine("**Would you like to proceed with ${suggestion.suggestedWorkType} at ${suggestion.suggestedLocation}?**")
+                        appendLine()
+                        appendLine("• Reply **\"Yes\"** to book this appointment")
+                        appendLine("• Or tell me a different appointment type/location you'd prefer")
+                    }
+                    
+                    val suggestionMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        suggestionContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "suggestion",
+                        message = suggestionMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.SuggestionAccepted -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Great! Proceeding with ${progress.suggestion.suggestedWorkType} at ${progress.suggestion.suggestedLocation}..."
+                    ))
+                }
+                
+                is AppointmentProgress.SuggestionDeclined -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "❌ Suggestion declined. Please provide a different appointment type."
+                    ))
+                }
+                
+                is AppointmentProgress.FetchingBranches -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🏥 Fetching available branches..."
+                    ))
+                }
+                
+                is AppointmentProgress.PromptBranchSelection -> {
+                    val branches = progress.availableBranches
+                    logger.info("${LogColors.CHAT} Branch selection prompt: ${branches.size} branches available")
+                    
+                    // Get the workTypeGroupId from the validation result stored earlier
+                    // We'll need to store it when validation completes
+                    
+                    // Store the pending branches in the session
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingBranchSelection = branches,
+                            conversationState = ConversationState.AWAITING_BRANCH_SELECTION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val branchMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "branch_selection",
+                        message = branchMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.FindingClosestBranch -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📍 Finding the closest branch to your location..."
+                    ))
+                }
+                
+                is AppointmentProgress.BranchSelectionComplete -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ ${progress.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.PromptTimeslotConfirmation -> {
+                    // Store suggested time and update state
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            suggestedTimeslot = progress.suggestedTime,
+                            conversationState = ConversationState.AWAITING_TIMESLOT_CONFIRMATION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val timeslotMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "timeslot_confirmation",
+                        message = timeslotMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.TimeslotConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Looking for slots around ${progress.confirmedTime}..."
+                    ))
                 }
             }
         }

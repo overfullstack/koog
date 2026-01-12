@@ -29,10 +29,18 @@ import org.jetbrains.demo.agent.a2a.appointmentValidationAgentCard
 import org.jetbrains.demo.agent.a2a.serviceTerritoryValidationAgentCard
 import org.jetbrains.demo.agent.a2a.timeslotValidationAgentCard
 import org.salesforce.LogColors
-import org.salesforce.swara.agents.LOCATION_WEATHER_CARD_PATH
-import org.salesforce.swara.agents.LOCATION_WEATHER_PATH
-import org.salesforce.swara.agents.LocationWeatherAgentExecutor
-import org.salesforce.swara.agents.locationWeatherAgentCard
+import org.salesforce.swara.agents.TAVILY_CARD_PATH
+import org.salesforce.swara.agents.TAVILY_PATH
+import org.salesforce.swara.agents.TavilyAgentExecutor
+import org.salesforce.swara.agents.tavilyAgentCard
+import org.salesforce.swara.agents.MAPS_CARD_PATH
+import org.salesforce.swara.agents.MAPS_PATH
+import org.salesforce.swara.agents.MapsAgentExecutor
+import org.salesforce.swara.agents.mapsAgentCard
+import org.salesforce.swara.agents.WEATHER_CARD_PATH
+import org.salesforce.swara.agents.WEATHER_PATH
+import org.salesforce.swara.agents.WeatherAgentExecutor
+import org.salesforce.swara.agents.weatherAgentCard
 import org.salesforce.tools.Tools
 import org.slf4j.LoggerFactory
 
@@ -40,11 +48,14 @@ private val logger = LoggerFactory.getLogger("A2AServerSetup")
 
 data class A2AConfig(
     val baseUrl: String,
-    val locationWeatherPort: Int = 9101,
+    val tavilyPort: Int = 9101,
     val appointmentValidationPort: Int = 9103,
     val serviceTerritoryValidationPort: Int = 9104,
     val timeslotValidationPort: Int = 9105,
-    val appointmentBookingPort: Int = 9102
+    val appointmentBookingPort: Int = 9102,
+    // Additional agent ports
+    val mapsPort: Int = 9107,
+    val weatherPort: Int = 9108
 )
 
 class A2AMeshServer(
@@ -58,54 +69,63 @@ class A2AMeshServer(
         logger.info(LogColors.serverBanner("A2A SCHEDULER SERVER STARTING"))
         logger.info("${LogColors.SERVER} Base URL: ${config.baseUrl}")
         logger.info("${LogColors.SERVER} Configured ports:")
-        logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.locationWeatherPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Tavily Agent")}: ${config.tavilyPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.appointmentValidationPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.blue("Service Territory Validation")}: ${config.serviceTerritoryValidationPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.green("Timeslot Validation")}: ${config.timeslotValidationPort}")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.appointmentBookingPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Google Maps")}: ${config.mapsPort}")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Weather Forecast")}: ${config.weatherPort}")
 
-        scope.launch { startLocationWeatherServer() }
+        scope.launch { startTavilyServer() }
         scope.launch { startAppointmentValidationServer() }
         scope.launch { startServiceTerritoryValidationServer() }
         scope.launch { startTimeslotValidationServer() }
         scope.launch { startAppointmentBookingServer() }
+        scope.launch { startMapsServer() }
+        scope.launch { startWeatherServer() }
 
         logger.info(LogColors.serverBanner("A2A SCHEDULER SERVER STARTED"))
         logger.info("${LogColors.SERVER} Endpoints available:")
-        logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Tavily Agent")}: ${config.baseUrl}:${config.tavilyPort}$TAVILY_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.baseUrl}:${config.appointmentValidationPort}${APPOINTMENT_VALIDATION_PATH}")
         logger.info("${LogColors.SERVER}   ${LogColors.blue("Service Territory Validation")}: ${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.green("Timeslot Validation")}: ${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}${APPOINTMENT_BOOKING_PATH}")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Google Maps")}: ${config.baseUrl}:${config.mapsPort}$MAPS_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Weather Forecast")}: ${config.baseUrl}:${config.weatherPort}$WEATHER_PATH")
+        
         logger.info("${LogColors.SERVER} Agent cards available at:")
-        logger.info("${LogColors.SERVER}   ${LogColors.cyan("Location Weather")}: ${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.yellow("Tavily Agent")}: ${config.baseUrl}:${config.tavilyPort}$TAVILY_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.yellow("Appointment Validation")}: ${config.baseUrl}:${config.appointmentValidationPort}${APPOINTMENT_VALIDATION_CARD_PATH}")
         logger.info("${LogColors.SERVER}   ${LogColors.blue("Service Territory Validation")}: ${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.green("Timeslot Validation")}: ${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_CARD_PATH")
         logger.info("${LogColors.SERVER}   ${LogColors.magenta("Appointment Booking")}: ${config.baseUrl}:${config.appointmentBookingPort}${APPOINTMENT_BOOKING_CARD_PATH}")
+        logger.info("${LogColors.SERVER}   ${LogColors.green("Google Maps")}: ${config.baseUrl}:${config.mapsPort}$MAPS_CARD_PATH")
+        logger.info("${LogColors.SERVER}   ${LogColors.blue("Weather Forecast")}: ${config.baseUrl}:${config.weatherPort}$WEATHER_CARD_PATH")
     }
 
-    private suspend fun startLocationWeatherServer() {
-        logger.info("${LogColors.LOCATION_WEATHER} Server initializing...")
-        val agentCard = locationWeatherAgentCard("${config.baseUrl}:${config.locationWeatherPort}")
-        val agentExecutor = LocationWeatherAgentExecutor(promptExecutor, tools)
+    private suspend fun startTavilyServer() {
+        logger.info("${LogColors.TAVILY} Server initializing...")
+        val agentCard = tavilyAgentCard("${config.baseUrl}:${config.tavilyPort}")
+        val agentExecutor = TavilyAgentExecutor(promptExecutor, tools.mcpTools)
         val a2aServer = A2AServer(
             agentExecutor = agentExecutor,
             agentCard = agentCard,
         )
 
         val serverTransport = HttpJSONRPCServerTransport(a2aServer)
-        logger.info("${LogColors.LOCATION_WEATHER} Server starting on port ${config.locationWeatherPort}")
+        logger.info("${LogColors.TAVILY} Server starting on port ${config.tavilyPort}")
 
         serverTransport.start(
             engineFactory = CIO,
-            port = config.locationWeatherPort,
-            path = LOCATION_WEATHER_PATH,
+            port = config.tavilyPort,
+            path = TAVILY_PATH,
             wait = false,
             agentCard = agentCard,
-            agentCardPath = LOCATION_WEATHER_CARD_PATH
+            agentCardPath = TAVILY_CARD_PATH
         )
-        logger.info("${LogColors.LOCATION_WEATHER} Server started successfully")
+        logger.info("${LogColors.TAVILY} Server started successfully")
     }
 
     private suspend fun startAppointmentValidationServer() {
@@ -200,14 +220,77 @@ class A2AMeshServer(
         logger.info("${LogColors.APPOINTMENT_BOOKING} Server started successfully")
     }
 
+    private suspend fun startMapsServer() {
+        logger.info("${LogColors.MAPS} Server initializing...")
+        val agentCard = mapsAgentCard("${config.baseUrl}:${config.mapsPort}")
+        val agentExecutor = MapsAgentExecutor(promptExecutor, tools.mcpTools)
+        val a2aServer = A2AServer(
+            agentExecutor = agentExecutor,
+            agentCard = agentCard,
+        )
+
+        val serverTransport = HttpJSONRPCServerTransport(a2aServer)
+        logger.info("${LogColors.MAPS} Server starting on port ${config.mapsPort}")
+
+        serverTransport.start(
+            engineFactory = CIO,
+            port = config.mapsPort,
+            path = MAPS_PATH,
+            wait = false,
+            agentCard = agentCard,
+            agentCardPath = MAPS_CARD_PATH
+        )
+        logger.info("${LogColors.MAPS} Server started successfully")
+    }
+
+    private suspend fun startWeatherServer() {
+        logger.info("${LogColors.WEATHER} Server initializing...")
+        val agentCard = weatherAgentCard("${config.baseUrl}:${config.weatherPort}")
+        val agentExecutor = WeatherAgentExecutor(promptExecutor, tools.mcpTools)
+        val a2aServer = A2AServer(
+            agentExecutor = agentExecutor,
+            agentCard = agentCard,
+        )
+
+        val serverTransport = HttpJSONRPCServerTransport(a2aServer)
+        logger.info("${LogColors.WEATHER} Server starting on port ${config.weatherPort}")
+
+        serverTransport.start(
+            engineFactory = CIO,
+            port = config.weatherPort,
+            path = WEATHER_PATH,
+            wait = false,
+            agentCard = agentCard,
+            agentCardPath = WEATHER_CARD_PATH
+        )
+        logger.info("${LogColors.WEATHER} Server started successfully")
+    }
+
     fun getEndpoints(): A2ASchedulerEndpoints = A2ASchedulerEndpoints(
-        locationWeatherUrl = "${config.baseUrl}:${config.locationWeatherPort}$LOCATION_WEATHER_PATH",
+        locationReviewUrl = "${config.baseUrl}:${config.tavilyPort}$TAVILY_PATH",
         appointmentValidationUrl = "${config.baseUrl}:${config.appointmentValidationPort}${APPOINTMENT_VALIDATION_PATH}",
         serviceTerritoryValidationUrl = "${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
         timeslotValidationUrl = "${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
-        appointmentBookingUrl = "${config.baseUrl}:${config.appointmentBookingPort}${APPOINTMENT_BOOKING_PATH}"
+        appointmentBookingUrl = "${config.baseUrl}:${config.appointmentBookingPort}${APPOINTMENT_BOOKING_PATH}",
+        mapsUrl = "${config.baseUrl}:${config.mapsPort}$MAPS_PATH"
+    )
+    
+    /**
+     * Get endpoints for the additional agents (Maps, Weather)
+     */
+    fun getAdditionalAgentEndpoints(): AdditionalAgentEndpoints = AdditionalAgentEndpoints(
+        mapsUrl = "${config.baseUrl}:${config.mapsPort}$MAPS_PATH",
+        weatherUrl = "${config.baseUrl}:${config.weatherPort}$WEATHER_PATH"
     )
 }
+
+/**
+ * Endpoints for the additional agents.
+ */
+data class AdditionalAgentEndpoints(
+    val mapsUrl: String,
+    val weatherUrl: String
+)
 
 fun Application.a2aSchedulerRoutes() {
     routing {
