@@ -1,0 +1,163 @@
+{
+	"info": {
+		"_postman_id": "c967e265-4077-4516-a034-87d19b8e2f09",
+		"name": "Book Appointment",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "50428933"
+	},
+	"item": [
+		{
+			"name": "Auth With Credentials",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const responseBody = pm.response.text();",
+							"const responseXml = pm.response.text();",
+							"const responseJson = xml2Json(responseXml);",
+							"const sessionIdValue = responseJson['soapenv:Envelope']['soapenv:Body'].loginResponse.result.sessionId;",
+							"pm.environment.set(\"sessionID\", sessionIdValue);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "SOAPAction",
+						"value": "login"
+					},
+					{
+						"key": "Content-Type",
+						"value": "text/xml"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n<soap:Envelope xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"\n    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n    xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n    <soap:Body>\n        <login xmlns=\"urn:partner.soap.sforce.com\">\n            <username>{{username}}</username>\n            <password>{{password}}</password>\n        </login>\n    </soap:Body>\n</soap:Envelope>",
+					"options": {
+						"raw": {
+							"language": "xml"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/services/Soap/u/64.0",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"services",
+						"Soap",
+						"u",
+						"64.0"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Book Service Appointment",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"exec": [
+							"const responseJson7 = pm.response.json();",
+							"pm.environment.set(\"serviceAppointmentID\", responseJson7.result.serviceAppointmentId);"
+						],
+						"type": "text/javascript",
+						"packages": {},
+						"requests": {}
+					}
+				}
+			],
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"user-agent": true,
+					"connection": true,
+					"accept-encoding": true,
+					"accept": true
+				}
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "{{sessionID}}",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"serviceAppointment\": {\n        \"schedStartTime\": \"{{startTime}}\",\n        \"schedEndTime\": \"{{endTime}}\",\n        \"parentRecordId\": \"00Qfi800000H9QHEA0\",\n        \"serviceTerritoryId\": \"{{serviceTerritoryID}}\",\n        \"workTypeId\": \"08qfi800000DFoXAAW\",\n        \"extendedFields\": [\n            {\n                \"name\": \"Email\",\n                \"value\": \"rhl.aaadams@salesforce.com\"\n            },\n            {\n                \"name\": \"Phone\",\n                \"value\": \"8053453505\"\n            },\n            {\n                \"name\": \"Comments\",\n                \"value\": \"Booked via Koog AI Agent\"\n            }\n        ]\n    },\n    \"assignedResources\": [\n        {\n            \"serviceResourceId\": \"{{serviceResourceID}}\",\n            \"isRequiredResource\": true,\n            \"isPrimaryResource\": false\n        }\n    ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{baseUrl}}/services/data/v66.0/connect/scheduling/service-appointments",
+					"host": [
+						"{{baseUrl}}"
+					],
+					"path": [
+						"services",
+						"data",
+						"v66.0",
+						"connect",
+						"scheduling",
+						"service-appointments"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{sessionID}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"requests": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}
+

@@ -272,7 +272,9 @@ class A2AMeshServer(
         serviceTerritoryValidationUrl = "${config.baseUrl}:${config.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
         timeslotValidationUrl = "${config.baseUrl}:${config.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
         appointmentBookingUrl = "${config.baseUrl}:${config.appointmentBookingPort}${APPOINTMENT_BOOKING_PATH}",
-        mapsUrl = "${config.baseUrl}:${config.mapsPort}$MAPS_PATH"
+        mapsUrl = "${config.baseUrl}:${config.mapsPort}$MAPS_PATH",
+        weatherUrl = "${config.baseUrl}:${config.weatherPort}$WEATHER_PATH",
+        tavilyUrl = "${config.baseUrl}:${config.tavilyPort}$TAVILY_PATH"
     )
     
     /**

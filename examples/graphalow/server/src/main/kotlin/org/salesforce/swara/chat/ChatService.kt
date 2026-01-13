@@ -132,6 +132,9 @@ data class ChatSession(
     val serviceTerritoryId: String? = null,
     val selectedBranch: BranchInfo? = null,
     val suggestedTimeslot: String? = null,
+    val pendingTimeslotId: String? = null, // For booking confirmation
+    val pendingSelectedTimeslot: String? = null, // Display string for booking confirmation
+    val pendingTimeslotInfo: TimeslotInfo? = null, // Full timeslot info for booking
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )
@@ -599,6 +602,98 @@ class ChatService(
                     .collect { emit(it) }
             }
             
+            // Handle final booking confirmation response
+            currentState == ConversationState.AWAITING_BOOKING_CONFIRMATION -> {
+                val form = session.appointmentForm
+                val workTypeGroupId = session.workTypeGroupId
+                val selectedBranch = session.selectedBranch
+                val pendingTimeslotId = session.pendingTimeslotId
+                val pendingSelectedTimeslot = session.pendingSelectedTimeslot
+                
+                if (form == null || workTypeGroupId == null || selectedBranch == null) {
+                    logger.error("${LogColors.CHAT} Missing data for booking confirmation")
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "Session data missing. Please start over.",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+                    return@flow
+                }
+                
+                val lowerMessage = request.message.lowercase().trim()
+                
+                // Check if user confirmed
+                val isConfirmed = listOf("yes", "yeah", "yep", "ok", "okay", "sure", "confirm", "book it", "go ahead", "proceed")
+                    .any { lowerMessage == it || lowerMessage.startsWith("$it ") || lowerMessage.startsWith("$it,") || lowerMessage.startsWith("$it.") }
+                
+                if (isConfirmed) {
+                    logger.info("${LogColors.CHAT} User confirmed booking for timeslot: $pendingSelectedTimeslot")
+                    
+                    // Clear pending state and continue
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingTimeslotId = null,
+                            pendingSelectedTimeslot = null,
+                            pendingTimeslotInfo = null,
+                            conversationState = ConversationState.PLANNING,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val confirmMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "✅ Great! Finalizing your booking...",
+                        MessageType.THINKING
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = confirmMessage))
+                    
+                    // Get full booking details from session
+                    val serviceTerritoryId = session.serviceTerritoryId
+                    val pendingTimeslotInfo = session.pendingTimeslotInfo
+                    
+                    logger.info("${LogColors.CHAT} ========== SESSION DATA BEFORE FINAL BOOKING ==========")
+                    logger.info("${LogColors.CHAT} session.workTypeGroupId: $workTypeGroupId")
+                    logger.info("${LogColors.CHAT} session.serviceTerritoryId: $serviceTerritoryId")
+                    logger.info("${LogColors.CHAT} session.pendingTimeslotId: $pendingTimeslotId")
+                    logger.info("${LogColors.CHAT} session.pendingSelectedTimeslot: $pendingSelectedTimeslot")
+                    logger.info("${LogColors.CHAT} session.pendingTimeslotInfo: $pendingTimeslotInfo")
+                    logger.info("${LogColors.CHAT} session.selectedBranch: ${selectedBranch.branchName}")
+                    logger.info("${LogColors.CHAT} ========================================================")
+                    
+                    // Continue with actual booking
+                    handleFinalBooking(sessionId, userId, form, selectedBranch, workTypeGroupId, pendingTimeslotId, 
+                        pendingSelectedTimeslot ?: "selected timeslot", serviceTerritoryId, pendingTimeslotInfo)
+                        .collect { emit(it) }
+                } else {
+                    // User declined or wants to change
+                    logger.info("${LogColors.CHAT} User declined or wants to change: ${request.message}")
+                    
+                    // Reset to timeslot selection
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingTimeslotId = null,
+                            pendingSelectedTimeslot = null,
+                            pendingTimeslotInfo = null,
+                            conversationState = ConversationState.AWAITING_TIMESLOT_CONFIRMATION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val changeMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "No problem! Please tell me what time you'd prefer for your appointment.",
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "assistant_message", message = changeMessage, awaitingResponse = true))
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+            }
+            
             // New conversation - greet
             currentState == ConversationState.GREETING && appointmentForm == null && 
             classification.intent == UserIntent.GREETING -> {
@@ -943,6 +1038,43 @@ class ChatService(
                     ))
                 }
                 
+                is AppointmentProgress.FetchingParkingInfo -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🅿️ Checking parking availability..."
+                    ))
+                }
+                
+                is AppointmentProgress.ParkingInfoComplete -> {
+                    // Show parking info as a separate detailed message
+                    val parkingContent = buildString {
+                        appendLine("🅿️ **Parking Information for ${progress.parkingInfo.location}**")
+                        appendLine()
+                        appendLine(progress.parkingInfo.summary)
+                        progress.parkingInfo.parkingFees?.let { 
+                            appendLine()
+                            appendLine("💰 **Fees:** $it")
+                        }
+                        progress.parkingInfo.parkingTips?.let { 
+                            appendLine()
+                            appendLine("💡 **Tips:** $it")
+                        }
+                    }
+                    
+                    val parkingMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        parkingContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "parking_info",
+                        message = parkingMessage
+                    ))
+                }
+                
                 is AppointmentProgress.ValidatingServiceTerritory -> {
                     emit(ChatStreamEvent(
                         sessionId = sessionId,
@@ -1016,6 +1148,74 @@ class ChatService(
                         sessionId = sessionId,
                         type = "progress",
                         content = "✅ Timeslot validation complete: ${progress.validationResult.message}"
+                    ))
+                }
+                
+                is AppointmentProgress.FetchingWeather -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🌤️ Fetching weather forecast for your appointment day..."
+                    ))
+                }
+                
+                is AppointmentProgress.WeatherForecastComplete -> {
+                    // Show weather as a separate detailed message
+                    val weatherContent = buildString {
+                        appendLine("🌤️ **Weather Forecast for ${progress.forecast.location} on ${progress.forecast.dateTime.date}**")
+                        appendLine()
+                        progress.forecast.summary?.let { appendLine(it) }
+                    }
+                    
+                    val weatherMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        weatherContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "weather_forecast",
+                        message = weatherMessage
+                    ))
+                }
+                
+                is AppointmentProgress.PromptBookingConfirmation -> {
+                    // Store booking details and update state
+                    logger.info("${LogColors.CHAT} Received PromptBookingConfirmation: timeslotId=${progress.timeslotId}, timeslotInfo=${progress.timeslotInfo}, serviceTerritoryId=${progress.serviceTerritoryId}")
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingTimeslotId = progress.timeslotId,
+                            pendingSelectedTimeslot = progress.selectedTimeslot,
+                            pendingTimeslotInfo = progress.timeslotInfo,
+                            serviceTerritoryId = progress.serviceTerritoryId ?: s.serviceTerritoryId,
+                            conversationState = ConversationState.AWAITING_BOOKING_CONFIRMATION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val confirmMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "booking_confirmation",
+                        message = confirmMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.BookingConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Booking confirmed! Processing your appointment..."
                     ))
                 }
                 
@@ -1119,6 +1319,111 @@ class ChatService(
                     ))
                 }
                 
+                is AppointmentProgress.FetchingWeather -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🌤️ Fetching weather forecast for your appointment day..."
+                    ))
+                }
+                
+                is AppointmentProgress.WeatherForecastComplete -> {
+                    // Show weather as a separate detailed message
+                    val weatherContent = buildString {
+                        appendLine("🌤️ **Weather Forecast for ${progress.forecast.location} on ${progress.forecast.dateTime.date}**")
+                        appendLine()
+                        progress.forecast.summary?.let { appendLine(it) }
+                    }
+                    
+                    val weatherMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        weatherContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "weather_forecast",
+                        message = weatherMessage
+                    ))
+                }
+                
+                is AppointmentProgress.FetchingParkingInfo -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🅿️ Checking parking availability..."
+                    ))
+                }
+                
+                is AppointmentProgress.ParkingInfoComplete -> {
+                    // Show parking info as a separate detailed message
+                    val parkingContent = buildString {
+                        appendLine("🅿️ **Parking Information for ${progress.parkingInfo.location}**")
+                        appendLine()
+                        appendLine(progress.parkingInfo.summary)
+                        progress.parkingInfo.parkingFees?.let { 
+                            appendLine()
+                            appendLine("💰 **Fees:** $it")
+                        }
+                        progress.parkingInfo.parkingTips?.let { 
+                            appendLine()
+                            appendLine("💡 **Tips:** $it")
+                        }
+                    }
+                    
+                    val parkingMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        parkingContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "parking_info",
+                        message = parkingMessage
+                    ))
+                }
+                
+                is AppointmentProgress.PromptBookingConfirmation -> {
+                    // Store booking details and update state
+                    logger.info("${LogColors.CHAT} Received PromptBookingConfirmation: timeslotId=${progress.timeslotId}, timeslotInfo=${progress.timeslotInfo}, serviceTerritoryId=${progress.serviceTerritoryId}")
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingTimeslotId = progress.timeslotId,
+                            pendingSelectedTimeslot = progress.selectedTimeslot,
+                            pendingTimeslotInfo = progress.timeslotInfo,
+                            serviceTerritoryId = progress.serviceTerritoryId ?: s.serviceTerritoryId,
+                            conversationState = ConversationState.AWAITING_BOOKING_CONFIRMATION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val confirmMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "booking_confirmation",
+                        message = confirmMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.BookingConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Booking confirmed! Processing your appointment..."
+                    ))
+                }
+                
                 is AppointmentProgress.BookingAppointment -> {
                     emit(ChatStreamEvent(
                         sessionId = sessionId,
@@ -1147,6 +1452,100 @@ class ChatService(
                 
                 else -> {
                     logger.debug("${LogColors.CHAT} Unhandled progress event in timeslot confirmation flow: ${progress::class.simpleName}")
+                }
+            }
+        }
+        
+        // Handle final result (only if we didn't stop for booking confirmation)
+        finalResult?.let { result ->
+            sessions.computeIfPresent(sessionId) { _, s ->
+                s.copy(
+                    appointmentResult = result,
+                    conversationState = ConversationState.PRESENTING_PLAN,
+                    updatedAt = System.currentTimeMillis()
+                )
+            }
+            
+            val resultMessage = addMessage(sessionId, MessageRole.ASSISTANT, result.bookingMessage, MessageType.APPOINTMENT_RESULT)
+            emit(ChatStreamEvent(
+                sessionId = sessionId,
+                type = "appointment_result",
+                message = resultMessage,
+                appointmentResult = result
+            ))
+            
+            emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
+        }
+    }
+    
+    /**
+     * Handle final booking after user confirms the timeslot.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private fun handleFinalBooking(
+        sessionId: String,
+        userId: String?,
+        appointmentForm: AppointmentForm,
+        selectedBranch: BranchInfo,
+        workTypeGroupId: String,
+        timeslotId: String?,
+        selectedTimeslot: String,
+        serviceTerritoryId: String? = null,
+        timeslotInfo: TimeslotInfo? = null
+    ): Flow<ChatStreamEvent> = flow {
+        logger.info("${LogColors.CHAT} ========== FINAL BOOKING PARAMS ==========")
+        logger.info("${LogColors.CHAT} Processing final booking for timeslot: $selectedTimeslot")
+        logger.info("${LogColors.CHAT} WorkTypeGroupId: $workTypeGroupId")
+        logger.info("${LogColors.CHAT} TimeslotId: $timeslotId")
+        logger.info("${LogColors.CHAT} ServiceTerritoryId: $serviceTerritoryId")
+        logger.info("${LogColors.CHAT} TimeslotInfo: $timeslotInfo")
+        logger.info("${LogColors.CHAT} SelectedBranch: ${selectedBranch.branchName} (ST ID: ${selectedBranch.serviceTerritoryId})")
+        logger.info("${LogColors.CHAT} ===========================================")
+        
+        var finalResult: AppointmentResult? = null
+        
+        // Stream progress updates from orchestrator
+        orchestrator.bookAppointmentAfterConfirmation(
+            appointmentForm, selectedBranch, workTypeGroupId, timeslotId, selectedTimeslot,
+            serviceTerritoryId, timeslotInfo
+        ).collect { progress ->
+            when (progress) {
+                is AppointmentProgress.BookingConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Booking confirmed! Finalizing your appointment..."
+                    ))
+                }
+                
+                is AppointmentProgress.BookingAppointment -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "📝 Completing your booking..."
+                    ))
+                }
+                
+                is AppointmentProgress.BookingComplete -> {
+                    finalResult = progress.result
+                    logger.info("${LogColors.CHAT} Final booking complete in ${progress.totalDurationMs}ms")
+                }
+                
+                is AppointmentProgress.Error -> {
+                    logger.error("${LogColors.CHAT} Final booking error: ${progress.message}")
+                    updateConversationState(sessionId, ConversationState.COLLECTING_JOURNEY_DETAILS)
+                    
+                    val errorMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        "${progress.message} Would you like me to try again?",
+                        MessageType.ERROR
+                    )
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "error", message = errorMessage))
+                }
+                
+                else -> {
+                    logger.debug("${LogColors.CHAT} Unhandled progress event in final booking flow: ${progress::class.simpleName}")
                 }
             }
         }
@@ -1543,7 +1942,7 @@ class ChatService(
         return AppointmentForm(
             appointmentGroup = partial.appointmentGroup ?: "Unknown Appointment Type",
             location = partial.location ?: "Unknown Location",
-            appointmentTime = appointmentTime,
+            appointmentTime = appointmentTime.toString(),
             patientName = partial.patientName,
             notes = partial.notes
         )
@@ -1705,6 +2104,43 @@ class ChatService(
                 
                 is AppointmentProgress.LocationReviewsComplete -> {
                     // Location reviews step removed - only used for suggestions now
+                }
+                
+                is AppointmentProgress.FetchingParkingInfo -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🅿️ Checking parking availability..."
+                    ))
+                }
+                
+                is AppointmentProgress.ParkingInfoComplete -> {
+                    // Show parking info as a separate detailed message
+                    val parkingContent = buildString {
+                        appendLine("🅿️ **Parking Information for ${progress.parkingInfo.location}**")
+                        appendLine()
+                        appendLine(progress.parkingInfo.summary)
+                        progress.parkingInfo.parkingFees?.let { 
+                            appendLine()
+                            appendLine("💰 **Fees:** $it")
+                        }
+                        progress.parkingInfo.parkingTips?.let { 
+                            appendLine()
+                            appendLine("💡 **Tips:** $it")
+                        }
+                    }
+                    
+                    val parkingMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        parkingContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "parking_info",
+                        message = parkingMessage
+                    ))
                 }
                 
                 is AppointmentProgress.BookingAppointment -> {
@@ -1899,10 +2335,78 @@ class ChatService(
                         content = "✅ Looking for slots around ${progress.confirmedTime}..."
                     ))
                 }
+                
+                is AppointmentProgress.FetchingWeather -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "🌤️ Fetching weather forecast for your appointment day..."
+                    ))
+                }
+                
+                is AppointmentProgress.WeatherForecastComplete -> {
+                    // Show weather as a separate detailed message
+                    val weatherContent = buildString {
+                        appendLine("🌤️ **Weather Forecast for ${progress.forecast.location} on ${progress.forecast.dateTime.date}**")
+                        appendLine()
+                        progress.forecast.summary?.let { appendLine(it) }
+                    }
+                    
+                    val weatherMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        weatherContent,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "weather_forecast",
+                        message = weatherMessage
+                    ))
+                }
+                
+                is AppointmentProgress.PromptBookingConfirmation -> {
+                    // Store booking details and update state
+                    logger.info("${LogColors.CHAT} Received PromptBookingConfirmation: timeslotId=${progress.timeslotId}, timeslotInfo=${progress.timeslotInfo}, serviceTerritoryId=${progress.serviceTerritoryId}")
+                    sessions.computeIfPresent(sessionId) { _, s ->
+                        s.copy(
+                            pendingTimeslotId = progress.timeslotId,
+                            pendingSelectedTimeslot = progress.selectedTimeslot,
+                            pendingTimeslotInfo = progress.timeslotInfo,
+                            serviceTerritoryId = progress.serviceTerritoryId ?: s.serviceTerritoryId,
+                            conversationState = ConversationState.AWAITING_BOOKING_CONFIRMATION,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    }
+                    
+                    val confirmMessage = addMessage(
+                        sessionId,
+                        MessageRole.ASSISTANT,
+                        progress.message,
+                        MessageType.TEXT
+                    )
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "booking_confirmation",
+                        message = confirmMessage,
+                        awaitingResponse = true
+                    ))
+                    
+                    // Emit done event since we're waiting for user response
+                    emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true, awaitingResponse = true))
+                }
+                
+                is AppointmentProgress.BookingConfirmed -> {
+                    emit(ChatStreamEvent(
+                        sessionId = sessionId,
+                        type = "progress",
+                        content = "✅ Booking confirmed! Processing your appointment..."
+                    ))
+                }
             }
         }
         
-        // Handle final result
+        // Handle final result (only if we didn't stop for booking confirmation)
         finalResult?.let { result ->
             // Update session with result
             sessions.computeIfPresent(sessionId) { _, s ->
@@ -1920,9 +2424,9 @@ class ChatService(
                 message = resultMessage,
                 appointmentResult = result
             ))
+            
+            emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
         }
-        
-        emit(ChatStreamEvent(sessionId = sessionId, type = "done", done = true))
     }
     
     fun cleanupOldSessions(maxAgeMs: Long = 3600000) {

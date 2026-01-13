@@ -182,12 +182,28 @@ private fun tavilyStrategy() = strategy<A2AMessage, Unit>("location-review-strat
         logger.info("${LogColors.TAVILY} ${LogColors.LLM} Searching for location reviews...")
         logger.debug("${LogColors.TAVILY} Location: ${request.location}")
         
-        // Add user prompt
+        // Detect if this is a parking-only request
+        val isParkingRequest = request.appointmentType?.contains("PARKING ONLY", ignoreCase = true) == true ||
+                               request.location.contains("parking", ignoreCase = true)
+        
+        // Add user prompt based on request type
         llm.writeSession {
             appendPrompt {
                 user {
-                    +"""Search for reviews and information about: ${request.location}
-${if (request.appointmentType != null) "Appointment type: ${request.appointmentType}" else ""}
+                    if (isParkingRequest) {
+                        +"""Search for PARKING information only at: ${request.location}
+
+Use tavily to search for parking info at this hospital/location.
+
+Respond with a SHORT summary (2-3 sentences MAX):
+🅿️ [Is parking available? Free or paid? Any tips?]
+
+Example: "Paid parking available at ₹50/hour. Valet service offered. Arrive 15 mins early for parking."
+
+BE VERY BRIEF - only parking info, nothing else!"""
+                    } else {
+                        +"""Search for reviews and information about: ${request.location}
+${if (request.appointmentType != null) "Focus: ${request.appointmentType}" else ""}
 
 Use tavily to search for:
 1. Patient reviews and ratings for this location
@@ -204,13 +220,14 @@ After searching, provide a CONCISE summary (250 words maximum) including:
 IMPORTANT: Keep your final summary to 250 words or less. Be concise and prioritize the most useful information.
 
 Note: If any tool fails, continue with available information."""
+                    }
                 }
             }
         }
         
-        // Execute tool loop
+        // Execute tool loop (limited to 3 iterations max, then generate summary)
         var iterations = 0
-        val maxIterations = 8
+        val maxIterations = 3
         var finalResponse: String = ""
         
         while (iterations < maxIterations) {
@@ -258,13 +275,37 @@ Note: If any tool fails, continue with available information."""
             }
         }
         
+        // If no final response yet (all iterations were tool calls), force a summary
         if (finalResponse.isBlank()) {
-            finalResponse = "Unable to find reviews for this location after $maxIterations attempts."
+            logger.info("${LogColors.TAVILY} Tool iterations complete, requesting final summary...")
+            llm.writeSession {
+                appendPrompt {
+                    user {
+                        +"""Based on the search results above, please provide a CONCISE summary (250 words max) of the reviews and information found. Include:
+- Overall rating if found
+- Key positive highlights
+- Any concerns or warnings
+- Helpful tips for visiting
+
+If no useful information was found, say so briefly."""
+                    }
+                }
+            }
+            val summaryResponse = llm.writeSession { requestLLM() }
+            finalResponse = if (summaryResponse is Message.Assistant) {
+                summaryResponse.content
+            } else {
+                "Unable to generate summary for this location."
+            }
+            logger.info("${LogColors.TAVILY} Generated summary: ${finalResponse.take(100)}...")
         }
+        
+        // Limit summary length - shorter for parking requests
+        val maxLength = if (isParkingRequest) 300 else 1000
         
         LocationReviewResult(
             location = request.location,
-            reviewSummary = finalResponse.take(1000),
+            reviewSummary = finalResponse.take(maxLength),
             rating = null,
             highlights = emptyList(),
             concerns = emptyList(),

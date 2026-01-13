@@ -10,8 +10,8 @@ data class AppointmentForm(
     val appointmentGroup: String,
     @property:LLMDescription("Location/address of the appointment")
     val location: String,
-    @property:LLMDescription("Date and time of the appointment")
-    val appointmentTime: LocalDateTime,
+    @property:LLMDescription("Date and time of the appointment in ISO 8601 format (e.g., '2026-01-12T20:45:00' or '2026-01-12T20:45:00Z')")
+    val appointmentTime: String,
     @property:LLMDescription("Patient name")
     val patientName: String? = null,
     @property:LLMDescription("Additional notes or requirements")
@@ -47,10 +47,24 @@ data class LocationReviewResult(
 )
 
 @Serializable
+data class TimeslotInfo(
+    @property:LLMDescription("The timeslot ID")
+    val timeslotId: String,
+    @property:LLMDescription("The start time in ISO 8601 format (UTC)")
+    val startTime: String,
+    @property:LLMDescription("The end time in ISO 8601 format (UTC)")
+    val endTime: String,
+    @property:LLMDescription("The service resource ID")
+    val serviceResourceId: String? = null
+)
+
+@Serializable
 data class AppointmentBookingRequest(
     val appointmentForm: AppointmentForm,
     val locationReviewInfo: LocationReviewResult?,
-    val workTypeGroupId: String? = null
+    val workTypeGroupId: String? = null,
+    val serviceTerritoryId: String? = null,
+    val timeslotInfo: TimeslotInfo? = null
 )
 
 @Serializable
@@ -186,7 +200,9 @@ data class TimeslotValidationResult(
     @property:LLMDescription("The end time of the validated timeslot")
     val endTime: LocalDateTime? = null,
     @property:LLMDescription("Whether the exact requested time was matched, or closest was selected")
-    val wasExactMatch: Boolean = true
+    val wasExactMatch: Boolean = true,
+    @property:LLMDescription("The service resource ID for the timeslot")
+    val serviceResourceId: String? = null
 )
 
 // ============================================
@@ -256,7 +272,9 @@ data class WeatherForecastRequest(
     @property:LLMDescription("The location to get weather for")
     val location: String,
     @property:LLMDescription("The date and time for the forecast")
-    val dateTime: LocalDateTime
+    val dateTime: LocalDateTime,
+    @property:LLMDescription("The type of medical appointment (e.g., asthma, diabetes checkup)")
+    val appointmentType: String? = null
 )
 
 @Serializable
@@ -276,5 +294,33 @@ data class WeatherForecastResult(
     @property:LLMDescription("Wind speed in km/h")
     val windSpeed: Double? = null,
     @property:LLMDescription("Weather summary and advice")
+    val summary: String
+)
+
+// ============================================
+// Parking Info Agent Models (Tavily)
+// ============================================
+
+@Serializable
+data class ParkingInfoRequest(
+    @property:LLMDescription("The location/hospital to check parking for")
+    val location: String,
+    @property:LLMDescription("The type of parking needed (patient, visitor, etc.)")
+    val parkingType: String = "patient"
+)
+
+@Serializable
+data class ParkingInfoResult(
+    @property:LLMDescription("The location for the parking info")
+    val location: String,
+    @property:LLMDescription("Whether parking is available")
+    val parkingAvailable: Boolean = true,
+    @property:LLMDescription("Parking cost/fees information")
+    val parkingFees: String? = null,
+    @property:LLMDescription("Parking hours or restrictions")
+    val parkingHours: String? = null,
+    @property:LLMDescription("Tips for parking at this location")
+    val parkingTips: String? = null,
+    @property:LLMDescription("Overall parking summary")
     val summary: String
 )

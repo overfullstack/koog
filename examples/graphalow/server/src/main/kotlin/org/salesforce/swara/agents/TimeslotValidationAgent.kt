@@ -197,24 +197,39 @@ private fun timeslotValidationStrategy() = strategy<A2AMessage, Unit>("timeslot-
         // Parse the tool response - it returns a JSON string containing timeslot information
         // We need to check if the requested appointment time matches any available timeslot
         val result = try {
-            // First, try to find a JSON object or array in the response
-            val jsonStart = toolResponse.indexOf('{').let { 
-                val arrayStart = toolResponse.indexOf('[')
-                when {
-                    it >= 0 && arrayStart >= 0 -> minOf(it, arrayStart)
-                    it >= 0 -> it
-                    arrayStart >= 0 -> arrayStart
-                    else -> -1
+            // Find the JSON by properly counting braces
+            fun extractValidJson(text: String): String? {
+                val startIdx = text.indexOf('{')
+                if (startIdx < 0) return null
+                
+                var depth = 0
+                var inString = false
+                var escape = false
+                
+                for (i in startIdx until text.length) {
+                    val c = text[i]
+                    when {
+                        escape -> escape = false
+                        c == '\\' -> escape = true
+                        c == '"' && !escape -> inString = !inString
+                        !inString && c == '{' -> depth++
+                        !inString && c == '}' -> {
+                            depth--
+                            if (depth == 0) {
+                                return text.substring(startIdx, i + 1)
+                            }
+                        }
+                    }
                 }
+                // If we didn't find a complete JSON, try taking what we have
+                return null
             }
-            val jsonEnd = maxOf(
-                toolResponse.lastIndexOf('}') + 1,
-                toolResponse.lastIndexOf(']') + 1
-            )
             
-            if (jsonStart >= 0 && jsonEnd > jsonStart) {
-                val jsonPart = toolResponse.substring(jsonStart, jsonEnd)
-                logger.debug("${LogColors.TIMESLOT} Extracted JSON part: $jsonPart")
+            val jsonPart = extractValidJson(toolResponse)
+            
+            if (jsonPart != null) {
+                logger.info("${LogColors.TIMESLOT} Extracted valid JSON (${jsonPart.length} chars)")
+                logger.debug("${LogColors.TIMESLOT} JSON preview: ${jsonPart.take(500)}...")
                 
                 val jsonElement = json.parseToJsonElement(jsonPart)
                 
@@ -250,11 +265,17 @@ private fun timeslotValidationStrategy() = strategy<A2AMessage, Unit>("timeslot-
                                             ?: item["end"]?.jsonPrimitive?.content
                                             ?: item["End"]?.jsonPrimitive?.content
                                         
+                                        // ServiceResourceId can be in different formats:
+                                        // - As a direct string field: serviceResourceId
+                                        // - As an array: resources (Salesforce format)
                                         val serviceResourceId = item["serviceResourceId"]?.jsonPrimitive?.content
                                             ?: item["ServiceResourceId"]?.jsonPrimitive?.content
                                             ?: item["serviceResource"]?.jsonPrimitive?.content
+                                            ?: (item["resources"] as? JsonArray)?.firstOrNull()?.jsonPrimitive?.content
+                                            ?: (item["Resources"] as? JsonArray)?.firstOrNull()?.jsonPrimitive?.content
                                         
                                         if (startTime != null || endTime != null) {
+                                            logger.debug("${LogColors.TIMESLOT} Extracted slot: id=$id, start=$startTime, end=$endTime, resourceId=$serviceResourceId")
                                             listOf(TimeslotInfo(id, startTime, endTime, serviceResourceId))
                                         } else emptyList()
                                     }
@@ -381,42 +402,55 @@ private fun timeslotValidationStrategy() = strategy<A2AMessage, Unit>("timeslot-
                 }
                 
                 // ALWAYS SELECT A SLOT if any are available - never say "not found"
+                // IMPORTANT: Always find the NEAREST slot that STARTS at or AFTER the requested time
                 var selectedTimeslot: ParsedTimeslot? = null
                 var wasExactMatch = false
                 
-                // First, try to find an exact match (requested time falls within a slot)
-                selectedTimeslot = parsedTimeslots.firstOrNull { parsed ->
-                    parsed.startTime != null && 
-                    parsed.startTime <= requestedTime && 
-                    (parsed.endTime == null || requestedTime <= parsed.endTime)
-                }
-                wasExactMatch = selectedTimeslot != null
+                logger.info("${LogColors.TIMESLOT} Finding next available timeslot starting at or after ${requestedTime}...")
                 
-                // If no exact match, find the CLOSEST timeslot (by start time)
-                if (selectedTimeslot == null) {
-                    logger.info("${LogColors.TIMESLOT} No exact match found, selecting closest timeslot...")
+                // Filter to slots with parseable start times first
+                val slotsWithStartTime = parsedTimeslots.filter { it.startTime != null }
+                
+                if (slotsWithStartTime.isNotEmpty()) {
+                    // IMPORTANT: Filter to only timeslots that START at or AFTER the requested time
+                    val slotsAfterRequested = slotsWithStartTime.filter { parsed ->
+                        val slotStart = parsed.startTime!!
+                        slotStart >= requestedTime
+                    }
                     
-                    // Filter to slots with parseable start times first
-                    val slotsWithStartTime = parsedTimeslots.filter { it.startTime != null }
+                    logger.info("${LogColors.TIMESLOT} Found ${slotsAfterRequested.size} slots starting at or after ${requestedTime}")
                     
-                    if (slotsWithStartTime.isNotEmpty()) {
-                        // Find the closest timeslot by comparing start times
-                        selectedTimeslot = slotsWithStartTime.minByOrNull { parsed ->
+                    if (slotsAfterRequested.isNotEmpty()) {
+                        // Find the NEAREST timeslot that starts at or AFTER the requested time
+                        selectedTimeslot = slotsAfterRequested.minByOrNull { parsed ->
                             val slotStart = parsed.startTime!!
-                            val requestedMinutes = requestedTime.hour * 60 + requestedTime.minute
-                            val slotMinutes = slotStart.hour * 60 + slotStart.minute
-                            val dayDiff = (requestedTime.dayOfYear - slotStart.dayOfYear) * 24 * 60
-                            kotlin.math.abs(requestedMinutes - slotMinutes + dayDiff)
+                            // Calculate time difference in minutes (slot start - requested time)
+                            val requestedMinutes = requestedTime.dayOfYear * 24 * 60 + requestedTime.hour * 60 + requestedTime.minute
+                            val slotMinutes = slotStart.dayOfYear * 24 * 60 + slotStart.hour * 60 + slotStart.minute
+                            slotMinutes - requestedMinutes // Positive value = slot is after requested time
                         }
-                    } else if (parsedTimeslots.isNotEmpty()) {
-                        // Couldn't parse times, just take the FIRST available slot
-                        logger.info("${LogColors.TIMESLOT} Could not parse times, selecting first available slot")
-                        selectedTimeslot = parsedTimeslots.first()
+                        
+                        // Check if this is an exact match (slot starts exactly at requested time)
+                        wasExactMatch = selectedTimeslot?.startTime == requestedTime
+                        
+                        logger.info("${LogColors.TIMESLOT} Selected nearest slot starting at or after requested time: ${selectedTimeslot?.startTime}")
+                    } else {
+                        // No slots after requested time - take the LAST slot of the day as fallback
+                        // (better to offer a slot than none at all)
+                        logger.warn("${LogColors.TIMESLOT} No slots found starting at or after ${requestedTime}, selecting latest available slot as fallback")
+                        selectedTimeslot = slotsWithStartTime.maxByOrNull { parsed ->
+                            val slotStart = parsed.startTime!!
+                            slotStart.dayOfYear * 24 * 60 + slotStart.hour * 60 + slotStart.minute
+                        }
                     }
-                    
-                    if (selectedTimeslot != null) {
-                        logger.info("${LogColors.TIMESLOT} Selected slot: ${selectedTimeslot.startTime ?: selectedTimeslot.info.startTime} - ${selectedTimeslot.endTime ?: selectedTimeslot.info.endTime}")
-                    }
+                } else if (parsedTimeslots.isNotEmpty()) {
+                    // Couldn't parse times, just take the FIRST available slot
+                    logger.info("${LogColors.TIMESLOT} Could not parse times, selecting first available slot")
+                    selectedTimeslot = parsedTimeslots.first()
+                }
+                
+                if (selectedTimeslot != null) {
+                    logger.info("${LogColors.TIMESLOT} Final selected slot: ${selectedTimeslot.startTime ?: selectedTimeslot.info.startTime} - ${selectedTimeslot.endTime ?: selectedTimeslot.info.endTime}")
                 }
                 
                 // If we STILL don't have a slot but there are available timeslots, just take the first one
@@ -438,7 +472,7 @@ private fun timeslotValidationStrategy() = strategy<A2AMessage, Unit>("timeslot-
                     if (wasExactMatch) {
                         "✅ Found exact timeslot match for '${request.appointmentTime}'. Timeslot ID: $matchedTimeslotId, Time: $displayStartTime - $displayEndTime"
                     } else {
-                        "✅ Booked closest available timeslot: $displayStartTime - $displayEndTime (Timeslot ID: $matchedTimeslotId). Your requested time was '${request.appointmentTime}'."
+                        "✅ Booked next available timeslot after ${request.appointmentTime}: $displayStartTime - $displayEndTime (Timeslot ID: $matchedTimeslotId)"
                     }
                 } else if (selectedTimeslot != null) {
                     "✅ Timeslot booked. Time: $displayStartTime - $displayEndTime"
@@ -451,13 +485,18 @@ private fun timeslotValidationStrategy() = strategy<A2AMessage, Unit>("timeslot-
                 // ALWAYS return isValid = true
                 val isValid = true
                 
+                // Extract serviceResourceId from selected timeslot
+                val matchedServiceResourceId = selectedTimeslot?.info?.serviceResourceId
+                logger.info("${LogColors.TIMESLOT} ServiceResourceId from timeslot: $matchedServiceResourceId")
+                
                 TimeslotValidationResult(
                     isValid = isValid,
                     message = message,
                     timeslotId = matchedTimeslotId,
                     startTime = matchedStartTime,
                     endTime = matchedEndTime,
-                    wasExactMatch = wasExactMatch
+                    wasExactMatch = wasExactMatch,
+                    serviceResourceId = matchedServiceResourceId
                 )
             } else {
                 // No JSON found - still try to be helpful
@@ -476,7 +515,14 @@ private fun timeslotValidationStrategy() = strategy<A2AMessage, Unit>("timeslot-
             )
         }
         
-        logger.info("${LogColors.TIMESLOT} Validation complete: isValid=${result.isValid}, message=${result.message}, timeslotId=${result.timeslotId}")
+        logger.info("${LogColors.TIMESLOT} ========== TIMESLOT VALIDATION RESULT ==========")
+        logger.info("${LogColors.TIMESLOT} isValid: ${result.isValid}")
+        logger.info("${LogColors.TIMESLOT} timeslotId: ${result.timeslotId}")
+        logger.info("${LogColors.TIMESLOT} startTime: ${result.startTime}")
+        logger.info("${LogColors.TIMESLOT} endTime: ${result.endTime}")
+        logger.info("${LogColors.TIMESLOT} serviceResourceId: ${result.serviceResourceId}")
+        logger.info("${LogColors.TIMESLOT} message: ${result.message}")
+        logger.info("${LogColors.TIMESLOT} ================================================")
         result
     }
 

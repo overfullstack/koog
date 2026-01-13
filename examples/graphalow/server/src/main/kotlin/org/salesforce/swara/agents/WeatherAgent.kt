@@ -115,22 +115,26 @@ private fun weatherAgent(
     val agentConfig = AIAgentConfig(
         prompt = prompt("weather-forecast") {
             system {
-                +"""You are a weather specialist using OpenWeather.
-                
-Your task is to:
-1. Use openweather tools to get accurate weather forecasts
-2. Provide temperature, conditions, humidity, and wind information
-3. Give helpful advice based on weather conditions
+                +"""You are a health-aware weather advisor. Be VERY CONCISE.
 
-Available MCP tools:
-- openweather: For weather forecasts and current conditions
+HEALTH GUIDELINES:
+- Asthma/Respiratory: Avoid cold (<15°C), humidity >70%. Best: mild, clear
+- Arthritis: Avoid cold, rain. Best: warm, dry
+- Heart: Avoid extremes (<5°C or >30°C). Best: moderate
+- Allergies: Avoid mornings. Best: evenings, after rain
+- General: Moderate temp, clear skies
 
-Use these tools to gather accurate weather information.
-Provide clear weather details and helpful preparation advice."""
+CRITICAL RULE: NEVER suggest times that have already passed! 
+- Only suggest future times (later today or tomorrow)
+- If morning/afternoon has passed, only suggest evening or tomorrow
+
+Your output must be SHORT (50 words max). Just give:
+1. Quick weather summary (only future times)
+2. Recommendation: Best FUTURE time based on their condition"""
             }
         },
         model = LLM_MODEL,
-        maxAgentIterations = 10
+        maxAgentIterations = 15
     )
 
     // Log available MCP tools for verification
@@ -173,21 +177,35 @@ private fun weatherStrategy() = strategy<A2AMessage, Unit>("weather-strategy") {
         logger.info("${LogColors.WEATHER} ${LogColors.LLM} Getting weather forecast...")
         logger.debug("${LogColors.WEATHER} Location: ${request.location}, Time: ${request.dateTime}")
         
-        // Add user prompt
+        val healthCondition = request.appointmentType ?: "general checkup"
+        val currentTime = java.time.LocalDateTime.now()
+        val currentHour = currentTime.hour
+        
+        // Determine which times are still available today
+        val availableToday = buildString {
+            if (currentHour < 12) append("Morning, Afternoon, Evening")
+            else if (currentHour < 17) append("Afternoon, Evening")
+            else if (currentHour < 21) append("Evening only")
+            else append("None (too late)")
+        }
+        
+        // Add user prompt - request simple weather summary with recommendation
         llm.writeSession {
             appendPrompt {
                 user {
-                    +"""Get weather forecast for: ${request.location} at ${request.dateTime}
+                    +"""Weather for ${request.location} on ${request.dateTime.date}
+Health condition: $healthCondition
+Current time: ${currentTime.hour}:${"%02d".format(currentTime.minute)}
+Available times TODAY: $availableToday
 
-Use openweather tools to get the weather forecast.
-Provide detailed weather information including:
-- Temperature (current and feels like)
-- Weather conditions (sunny, cloudy, rainy, etc.)
-- Humidity percentage
-- Wind speed
-- Any relevant weather advice
+Use weather tool, then respond in this EXACT format (50 words max):
 
-Note: If any tool fails, continue with available information."""
+**Today**: ${if (currentHour >= 12) "~~Morning~~" else "Morning __°C"} | ${if (currentHour >= 17) "~~Afternoon~~" else "Afternoon __°C"} | ${if (currentHour >= 21) "~~Evening~~" else "Evening __°C"}
+**Tomorrow**: Morning __°C | Afternoon __°C | Evening __°C
+
+**Best for $healthCondition**: [ONLY suggest FUTURE times!] - [one sentence reason]
+
+IMPORTANT: Do NOT suggest any time that has already passed (marked with ~~strikethrough~~)!"""
                 }
             }
         }
@@ -254,7 +272,7 @@ Note: If any tool fails, continue with available information."""
             conditions = null,
             humidity = null,
             windSpeed = null,
-            summary = finalResponse.take(500)
+            summary = finalResponse.take(1000) // Short weather summary with recommendation
         )
     }
 

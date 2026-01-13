@@ -22,14 +22,19 @@ import ai.koog.agents.core.agent.GraphAIAgent
 import ai.koog.agents.core.agent.config.AIAgentConfig
 import ai.koog.agents.core.dsl.builder.strategy
 import ai.koog.agents.core.tools.ToolRegistry
+import ai.koog.agents.core.tools.reflect.tools
 import ai.koog.agents.features.opentelemetry.feature.OpenTelemetry
 import ai.koog.prompt.dsl.prompt
 import ai.koog.prompt.executor.model.PromptExecutor
 import ai.koog.prompt.markdown.markdown
 import kotlinx.datetime.Clock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.jetbrains.demo.agent.a2a.model.AppointmentBookingRequest
 import org.jetbrains.demo.agent.a2a.model.AppointmentBookingResult
+import org.jetbrains.demo.agent.tools.AppointmentBookingTool
 import org.salesforce.LogColors
 import org.salesforce.travel.LLM_MODEL
 import org.salesforce.A2ATelemetry
@@ -140,7 +145,7 @@ private fun appointmentBookingAgent(
     )
 
     val toolRegistry = ToolRegistry {
-        // No tools needed - just generates confirmation message
+        tools(AppointmentBookingTool())
     }
 
     return GraphAIAgent(
@@ -173,14 +178,90 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
         val textContent = message.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
         val request = json.decodeFromString<AppointmentBookingRequest>(textContent)
         logger.info("${LogColors.APPOINTMENT_BOOKING} Parsed request: ${request.appointmentForm.appointmentGroup} at ${request.appointmentForm.location}")
+        logger.info("${LogColors.APPOINTMENT_BOOKING} WorkTypeGroupId: ${request.workTypeGroupId}, ServiceTerritoryId: ${request.serviceTerritoryId}")
+        logger.info("${LogColors.APPOINTMENT_BOOKING} TimeslotInfo: ${request.timeslotInfo}")
         request
     }
 
-    val generateConfirmation by node<AppointmentBookingRequest, AppointmentBookingResult> { request ->
+    val bookAppointment by node<AppointmentBookingRequest, Pair<AppointmentBookingRequest, String>> { request ->
+        logger.info("${LogColors.APPOINTMENT_BOOKING} Booking appointment via ReVoman collection...")
+        val timeslotInfo = request.timeslotInfo
+        
+        if (timeslotInfo == null) {
+            logger.error("${LogColors.APPOINTMENT_BOOKING} TimeslotInfo is null - cannot book without timeslot details")
+            return@node Pair(request, """{"error": "No timeslot information available", "success": false}""")
+        }
+        
+        val bookingTool = AppointmentBookingTool()
+        
+        val bookingResponse = try {
+            val serviceTerritoryId = request.serviceTerritoryId
+                ?: throw IllegalStateException("Service territory ID is required for booking")
+            
+            // Extract hospital name from location
+            val hospitalName = when {
+                request.appointmentForm.location.contains("yashoda", ignoreCase = true) -> "yashoda"
+                request.appointmentForm.location.contains("apollo", ignoreCase = true) -> "apollo"
+                else -> "apollo"
+            }
+            
+            logger.info("${LogColors.APPOINTMENT_BOOKING} Using timeslotInfo from validation:")
+            logger.info("${LogColors.APPOINTMENT_BOOKING}   - timeslotId: ${timeslotInfo.timeslotId}")
+            logger.info("${LogColors.APPOINTMENT_BOOKING}   - startTime: ${timeslotInfo.startTime}")
+            logger.info("${LogColors.APPOINTMENT_BOOKING}   - endTime: ${timeslotInfo.endTime}")
+            logger.info("${LogColors.APPOINTMENT_BOOKING}   - serviceResourceId: ${timeslotInfo.serviceResourceId}")
+            
+            bookingTool.bookAppointment(
+                startTime = timeslotInfo.startTime,
+                endTime = timeslotInfo.endTime,
+                serviceTerritoryId = serviceTerritoryId,
+                workTypeGroupId = request.workTypeGroupId ?: "",
+                serviceResourceId = timeslotInfo.serviceResourceId ?: "",
+                hospitalName = hospitalName
+            )
+        } catch (e: Exception) {
+            logger.error("${LogColors.APPOINTMENT_BOOKING} Booking failed: ${e.message}", e)
+            """{"error": "Booking failed: ${e.message}", "success": false}"""
+        }
+        
+        logger.info("${LogColors.APPOINTMENT_BOOKING} Booking response (first 500 chars): ${bookingResponse.take(500)}")
+        Pair(request, bookingResponse)
+    }
+
+    val generateConfirmation by node<Pair<AppointmentBookingRequest, String>, AppointmentBookingResult> { (request, bookingResponse) ->
         logger.info("${LogColors.APPOINTMENT_BOOKING} ${LogColors.LLM} Generating confirmation message...")
         val appointment = request.appointmentForm
         val locationReviewInfo = request.locationReviewInfo
         val workTypeGroupId = request.workTypeGroupId
+        val timeslotInfo = request.timeslotInfo
+        
+        // Parse booking response to check if it was successful
+        val bookingSuccess = try {
+            val bookingJson = json.parseToJsonElement(bookingResponse)
+            if (bookingJson is JsonObject) {
+                // Check for serviceAppointmentId in the result which indicates success
+                val result = bookingJson["result"]?.jsonObject
+                result?.get("serviceAppointmentId") != null
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            logger.warn("${LogColors.APPOINTMENT_BOOKING} Could not parse booking response: ${e.message}")
+            false
+        }
+        
+        // Extract appointment ID from booking response if available
+        val appointmentIdFromBooking = try {
+            val bookingJson = json.parseToJsonElement(bookingResponse)
+            if (bookingJson is JsonObject) {
+                val result = bookingJson["result"]?.jsonObject
+                result?.get("serviceAppointmentId")?.jsonPrimitive?.content
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
         
         // Use LLM to generate a professional confirmation message
         val result = llm.writeSession {
@@ -196,6 +277,15 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
                             appointment.patientName?.let { item("Patient: $it") }
                             appointment.notes?.let { item("Notes: $it") }
                         }
+                        if (timeslotInfo != null) {
+                            header(2, "Confirmed Timeslot Details")
+                            bulleted {
+                                item("Timeslot ID: ${timeslotInfo.timeslotId}")
+                                item("Start Time: ${timeslotInfo.startTime} (UTC)")
+                                item("End Time: ${timeslotInfo.endTime} (UTC)")
+                                timeslotInfo.serviceResourceId?.let { item("Service Resource ID: $it") }
+                            }
+                        }
                         if (locationReviewInfo != null) {
                             header(2, "Location Information")
                             bulleted {
@@ -204,13 +294,24 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
                                 locationReviewInfo.tips?.let { item("Tips: $it") }
                             }
                         }
+                        if (bookingResponse.isNotBlank() && !bookingResponse.contains("error")) {
+                            header(2, "Booking Result")
+                            codeblock(bookingResponse, "json")
+                        }
                         header(2, "Task")
                         bulleted {
                             item("Generate a professional, friendly confirmation message")
                             item("Include all appointment details")
+                            item("Include the confirmed timeslot details (start time, end time, timeslot ID) if provided")
                             item("Include the Work Type Group ID if provided")
                             item("Include location review information if available")
-                            item("Add appointment ID: APT-${Uuid.random().toString().take(8).uppercase()}")
+                            if (bookingSuccess) {
+                                item("The appointment has been successfully booked via the Salesforce API")
+                                appointmentIdFromBooking?.let { item("Service Appointment ID: $it") }
+                            } else {
+                                item("Note: The booking API call encountered an issue - check the booking result for details")
+                            }
+                            item("Add appointment ID: ${appointmentIdFromBooking ?: "APT-${Uuid.random().toString().take(8).uppercase()}"}")
                             item("Include reminders about arriving early and cancellation policy")
                         }
                     }
@@ -255,6 +356,6 @@ private fun appointmentBookingStrategy() = strategy<A2AMessage, Unit>("appointme
         }
     }
 
-    nodeStart then parseInput then createTask then generateConfirmation then sendResult then nodeFinish
+    nodeStart then parseInput then createTask then bookAppointment then generateConfirmation then sendResult then nodeFinish
 }
 

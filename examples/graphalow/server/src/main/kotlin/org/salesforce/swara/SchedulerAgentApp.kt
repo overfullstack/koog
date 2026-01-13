@@ -24,6 +24,7 @@ import org.salesforce.swara.a2a.A2AConfig
 import org.salesforce.swara.a2a.a2aSchedulerRoutes
 import org.salesforce.swara.agents.MAPS_PATH
 import org.salesforce.swara.agents.TAVILY_PATH
+import org.salesforce.swara.agents.WEATHER_PATH
 import org.salesforce.swara.chat.ChatService
 import org.salesforce.swara.chat.chatRoutes
 import kotlin.time.Duration.Companion.seconds
@@ -97,7 +98,9 @@ private fun Application.a2aMesh(config: AppConfig) {
             serviceTerritoryValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.serviceTerritoryValidationPort}$SERVICE_TERRITORY_VALIDATION_PATH",
             timeslotValidationUrl = "${config.a2aBaseUrl}:${a2aConfig.timeslotValidationPort}$TIMESLOT_VALIDATION_PATH",
             appointmentBookingUrl = "${config.a2aBaseUrl}:${a2aConfig.appointmentBookingPort}$APPOINTMENT_BOOKING_PATH",
-            mapsUrl = "${config.a2aBaseUrl}:${a2aConfig.mapsPort}$MAPS_PATH"
+            mapsUrl = "${config.a2aBaseUrl}:${a2aConfig.mapsPort}$MAPS_PATH",
+            weatherUrl = "${config.a2aBaseUrl}:${a2aConfig.weatherPort}$WEATHER_PATH",
+            tavilyUrl = "${config.a2aBaseUrl}:${a2aConfig.tavilyPort}$TAVILY_PATH"
         )
     )
     a2aSchedulerRoutes()

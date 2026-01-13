@@ -16,6 +16,7 @@ val excluded = setOf(
     ":test-utils",
     ":koog-spring-boot-starter",
     ":koog-ktor",
+    ":koog-chat-ui", // Standalone chat UI module
     ":docs",
 
     ":a2a:a2a-core",

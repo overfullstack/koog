@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwarA Chat</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="16" cy="16" r="14" fill="url(#gradient1)"/>
+                        <path d="M10 16L14 20L22 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        <defs>
+                            <linearGradient id="gradient1" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#667eea"/>
+                                <stop offset="1" stop-color="#764ba2"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <span>SwarA</span>
+                </div>
+            </div>
+            
+            <div class="connection-status" id="connectionStatus">
+                <div class="status-indicator disconnected"></div>
+                <span>Disconnected</span>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Settings</h3>
+                <div class="form-group">
+                    <label for="backendUrl">Backend WebSocket URL</label>
+                    <input type="text" id="backendUrl" placeholder="ws://localhost:8080/chat/ws">
+                </div>
+                <div class="form-group">
+                    <label for="sessionId">Session ID (optional)</label>
+                    <input type="text" id="sessionId" placeholder="Auto-generated if empty">
+                </div>
+                <div class="form-group">
+                    <label for="messageFormat">Message Format</label>
+                    <select id="messageFormat">
+                        <option value="text">Plain Text</option>
+                        <option value="json_simple" selected>JSON {message} (try this!)</option>
+                        <option value="json">JSON {sessionId, message}</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" id="connectBtn">Connect</button>
+                <button class="btn btn-secondary" id="disconnectBtn" style="display: none;">Disconnect</button>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Quick Actions</h3>
+                <button class="btn btn-ghost" id="clearChatBtn">Clear Chat</button>
+                <button class="btn btn-ghost" id="newSessionBtn">New Session</button>
+                <button class="btn btn-ghost" id="fullResetBtn" style="color: var(--error);">Full Reset</button>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Debug Info</h3>
+                <div class="debug-info" id="debugInfo">
+                    <div><small>Session: <span id="debugSessionId">none</span></small></div>
+                    <div><small>Status: <span id="debugStatus">disconnected</span></small></div>
+                </div>
+            </div>
+            
+            <div class="sidebar-footer">
+                <p>Powered by <strong>SwarA AI</strong></p>
+            </div>
+        </aside>
+        
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <!-- Chat Header -->
+            <header class="chat-header">
+                <div class="chat-header-info">
+                    <div class="avatar agent-avatar">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" fill="currentColor"/>
+                        </svg>
+                    </div>
+                    <div class="chat-header-text">
+                        <h2>AI Agent</h2>
+                        <span class="typing-indicator" id="typingIndicator" style="display: none;">
+                            <span class="typing-dot"></span>
+                            <span class="typing-dot"></span>
+                            <span class="typing-dot"></span>
+                            <span>typing...</span>
+                        </span>
+                        <span class="online-status" id="agentStatus">Ready to chat</span>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- Messages Container -->
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <div class="welcome-icon">💬</div>
+                    <h2>Welcome to SwarA</h2>
+                    <p>Connect to your backend WebSocket server and start chatting with your AI agent.</p>
+                    <div class="welcome-steps">
+                        <div class="step">
+                            <span class="step-number">1</span>
+                            <span>Configure the backend URL in the sidebar</span>
+                        </div>
+                        <div class="step">
+                            <span class="step-number">2</span>
+                            <span>Click "Connect" to establish connection</span>
+                        </div>
+                        <div class="step">
+                            <span class="step-number">3</span>
+                            <span>Start chatting with your AI agent!</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Message Input -->
+            <div class="message-input-container">
+                <form id="messageForm" class="message-form">
+                    <div class="input-wrapper">
+                        <textarea 
+                            id="messageInput" 
+                            placeholder="Type your message..." 
+                            rows="1"
+                            disabled
+                        ></textarea>
+                        <button type="submit" class="send-btn" id="sendBtn" disabled>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" fill="currentColor"/>
+                            </svg>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Message Template -->
+    <template id="messageTemplate">
+        <div class="message">
+            <div class="message-bubble">
+                <div class="message-content"></div>
+                <div class="message-time"></div>
+            </div>
+        </div>
+    </template>
+    
+    <!-- Progress Template -->
+    <template id="progressTemplate">
+        <div class="message message-agent">
+            <div class="message-bubble progress-bubble">
+                <div class="progress-indicator">
+                    <div class="progress-spinner"></div>
+                    <span class="progress-text"></span>
+                </div>
+            </div>
+        </div>
+    </template>
+    
+    <script src="app.js"></script>
+</body>
+</html>
+

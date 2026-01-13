@@ -170,8 +170,19 @@ private fun mapsStrategy() = strategy<A2AMessage, Unit>("maps-strategy") {
     val parseInput by node<A2AMessage, MapsLocationRequest> { message ->
         logger.debug("${LogColors.MAPS} Parsing input message...")
         val textContent = message.parts.filterIsInstance<TextPart>().joinToString("\n") { it.text }
-        val request = json.decodeFromString<MapsLocationRequest>(textContent)
-        logger.info("${LogColors.MAPS} Parsed request: ${request.location}")
+        
+        // Try to parse as JSON first, otherwise treat as plain text request
+        val request = try {
+            json.decodeFromString<MapsLocationRequest>(textContent)
+        } catch (e: Exception) {
+            logger.debug("${LogColors.MAPS} Not JSON, treating as text request: ${textContent.take(100)}")
+            // Extract location from text - this is for distance matrix or plain text queries
+            MapsLocationRequest(
+                location = textContent,
+                includeDetails = textContent.contains("distance", ignoreCase = true)
+            )
+        }
+        logger.info("${LogColors.MAPS} Parsed request: ${request.location.take(100)}")
         request
     }
 
@@ -179,11 +190,27 @@ private fun mapsStrategy() = strategy<A2AMessage, Unit>("maps-strategy") {
         logger.info("${LogColors.MAPS} ${LogColors.LLM} Looking up location...")
         logger.debug("${LogColors.MAPS} Location: ${request.location}")
         
-        // Add user prompt
+        val isDistanceRequest = request.location.contains("distance", ignoreCase = true) && 
+                                (request.location.contains("from", ignoreCase = true) || 
+                                 request.location.contains("to", ignoreCase = true))
+        
+        // Add user prompt based on request type
         llm.writeSession {
             appendPrompt {
                 user {
-                    +"""Look up location: ${request.location}
+                    if (isDistanceRequest) {
+                        +"""${request.location}
+
+Use the maps_distance_matrix tool to calculate driving distance and time.
+Parse the origins and destinations from the request above.
+
+After getting the result, extract:
+- Distance in kilometers
+- Travel time in minutes
+
+IMPORTANT: You must call the maps_distance_matrix tool first before providing any response."""
+                    } else {
+                        +"""Look up location: ${request.location}
 ${if (request.includeDetails) "Include place details (phone, hours, rating, etc.)" else "Basic geocoding only"}
 
 Use the maps_geocode tool to get coordinates for this location.
@@ -194,6 +221,7 @@ After getting the result, provide a summary with:
 - The latitude and longitude coordinates
 
 IMPORTANT: You must call the maps_geocode tool first before providing any response."""
+                    }
                 }
             }
         }

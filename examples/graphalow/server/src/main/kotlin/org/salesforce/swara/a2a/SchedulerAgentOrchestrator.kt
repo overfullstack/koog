@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.json.Json
 import org.jetbrains.demo.agent.a2a.model.AppointmentBookingRequest
 import org.jetbrains.demo.agent.a2a.model.AppointmentBookingResult
+import org.jetbrains.demo.agent.a2a.model.TimeslotInfo
 import org.jetbrains.demo.agent.a2a.model.AppointmentForm
 import org.jetbrains.demo.agent.a2a.model.AppointmentResult
 import org.jetbrains.demo.agent.a2a.model.AppointmentValidationRequest
@@ -35,8 +36,14 @@ import org.jetbrains.demo.agent.a2a.model.MapsLocationRequest
 import org.jetbrains.demo.agent.a2a.model.MapsLocationResult
 import org.jetbrains.demo.agent.a2a.model.MapsDistanceMatrixRequest
 import org.jetbrains.demo.agent.a2a.model.MapsDistanceMatrixResult
+import org.jetbrains.demo.agent.a2a.model.WeatherForecastRequest
+import org.jetbrains.demo.agent.a2a.model.WeatherForecastResult
+import org.jetbrains.demo.agent.a2a.model.ParkingInfoRequest
+import org.jetbrains.demo.agent.a2a.model.ParkingInfoResult
 import org.salesforce.swara.agents.MAPS_CARD_PATH
 import org.salesforce.swara.agents.MAPS_PATH
+import org.salesforce.swara.agents.WEATHER_CARD_PATH
+import org.salesforce.swara.agents.WEATHER_PATH
 import org.salesforce.LogColors
 import org.salesforce.swara.agents.TAVILY_CARD_PATH
 import org.salesforce.swara.agents.TAVILY_PATH
@@ -172,6 +179,45 @@ sealed class AppointmentProgress {
     data class TimeslotConfirmed(
         val confirmedTime: String
     ) : AppointmentProgress()
+    
+    /** Prompting user for final booking confirmation after timeslot found */
+    @kotlinx.serialization.Serializable
+    data class PromptBookingConfirmation(
+        val selectedTimeslot: String,
+        val timeslotId: String?,
+        val branchName: String,
+        val appointmentType: String,
+        val weatherForecast: WeatherForecastResult?,
+        val message: String,
+        val timeslotInfo: TimeslotInfo? = null,
+        val serviceTerritoryId: String? = null
+    ) : AppointmentProgress()
+    
+    /** User confirmed the booking */
+    @kotlinx.serialization.Serializable
+    object BookingConfirmed : AppointmentProgress()
+    
+    /** Fetching weather forecast for appointment day */
+    @kotlinx.serialization.Serializable
+    object FetchingWeather : AppointmentProgress()
+    
+    /** Weather forecast complete */
+    @kotlinx.serialization.Serializable
+    data class WeatherForecastComplete(
+        val forecast: WeatherForecastResult,
+        val durationMs: Long
+    ) : AppointmentProgress()
+    
+    /** Fetching parking information */
+    @kotlinx.serialization.Serializable
+    object FetchingParkingInfo : AppointmentProgress()
+    
+    /** Parking info complete */
+    @kotlinx.serialization.Serializable
+    data class ParkingInfoComplete(
+        val parkingInfo: ParkingInfoResult,
+        val durationMs: Long
+    ) : AppointmentProgress()
 }
 
 data class A2ASchedulerEndpoints(
@@ -180,7 +226,9 @@ data class A2ASchedulerEndpoints(
     val serviceTerritoryValidationUrl: String,
     val timeslotValidationUrl: String,
     val appointmentBookingUrl: String,
-    val mapsUrl: String
+    val mapsUrl: String,
+    val weatherUrl: String,
+    val tavilyUrl: String
 )
 
 class SchedulerAgentOrchestrator(
@@ -235,7 +283,7 @@ class SchedulerAgentOrchestrator(
         logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("[STEP 3/4]")} Validating Timeslot at ${endpoints.timeslotValidationUrl}")
         val timeslotValidationStart = System.currentTimeMillis()
         val timeslotValidationRequest = TimeslotValidationRequest(
-            appointmentTime = appointmentForm.appointmentTime,
+            appointmentTime = parseFlexibleDateTime(appointmentForm.appointmentTime),
             serviceTerritoryId = serviceTerritoryValidationResult.serviceTerritoryId
                 ?: throw IllegalStateException("Service territory ID is required for timeslot validation"),
             workTypeGroupId = validationResult.workTypeGroupId
@@ -255,10 +303,24 @@ class SchedulerAgentOrchestrator(
         // Step 4: Call Appointment Booking Agent
         logger.info("${LogColors.ORCHESTRATOR} ${LogColors.magenta("[STEP 4/4]")} Calling Appointment Booking Agent at ${endpoints.appointmentBookingUrl}")
         val bookingStart = System.currentTimeMillis()
+        
+        // Construct TimeslotInfo from validation result - only startTime and endTime are required
+        val timeslotInfo = if (timeslotValidationResult.startTime != null && 
+                               timeslotValidationResult.endTime != null) {
+            TimeslotInfo(
+                timeslotId = timeslotValidationResult.timeslotId ?: timeslotValidationResult.startTime.toString(),
+                startTime = timeslotValidationResult.startTime.toString(),
+                endTime = timeslotValidationResult.endTime.toString(),
+                serviceResourceId = timeslotValidationResult.serviceResourceId
+            )
+        } else null
+        
         val bookingRequest = AppointmentBookingRequest(
             appointmentForm = appointmentForm,
             locationReviewInfo = null,
-            workTypeGroupId = validationResult.workTypeGroupId
+            workTypeGroupId = validationResult.workTypeGroupId,
+            serviceTerritoryId = serviceTerritoryValidationResult.serviceTerritoryId,
+            timeslotInfo = timeslotInfo
         )
         val bookingResult = callAppointmentBookingAgent(bookingRequest)
         val bookingDuration = System.currentTimeMillis() - bookingStart
@@ -649,20 +711,164 @@ class SchedulerAgentOrchestrator(
                 return@flow
             }
             logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Timeslot validation passed")}: ${timeslotValidationResult.message}")
+            logger.info("${LogColors.ORCHESTRATOR} TimeslotValidationResult details: timeslotId=${timeslotValidationResult.timeslotId}, startTime=${timeslotValidationResult.startTime}, endTime=${timeslotValidationResult.endTime}, serviceResourceId=${timeslotValidationResult.serviceResourceId}")
             
-            // Update form with selected branch location AND the actual appointment time
+            // Format the selected timeslot for display
+            val selectedTimeslotDisplay = if (timeslotValidationResult.startTime != null && timeslotValidationResult.endTime != null) {
+                "${formatTimeForDisplay(timeslotValidationResult.startTime!!)} - ${formatTimeForDisplay(timeslotValidationResult.endTime!!)}"
+            } else {
+                displayTime
+            }
+            
+            // Step 4: Fetch weather forecast for the appointment day
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("Fetching weather forecast...")} for ${selectedBranch.branchName}")
+            emit(AppointmentProgress.FetchingWeather)
+            val weatherStart = System.currentTimeMillis()
+            val appointmentDateTime = timeslotValidationResult.startTime ?: actualAppointmentTime
+            logger.info("${LogColors.ORCHESTRATOR} Weather request: location=${selectedBranch.branchName}, dateTime=$appointmentDateTime, weatherUrl=${endpoints.weatherUrl}")
+            
+            val weatherForecast = try {
+                val result = callWeatherAgent(
+                    location = selectedBranch.branchName,
+                    dateTime = appointmentDateTime,
+                    appointmentType = appointmentForm.appointmentGroup
+                )
+                logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Weather agent returned successfully")}")
+                result
+            } catch (e: Exception) {
+                logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red("Weather forecast FAILED")}: ${e.message}", e)
+                // Create a fallback weather result so we still show something
+                WeatherForecastResult(
+                    location = selectedBranch.branchName,
+                    dateTime = appointmentDateTime,
+                    summary = "⚠️ Weather forecast unavailable. Please check local weather conditions before your appointment."
+                )
+            }
+            val weatherDuration = System.currentTimeMillis() - weatherStart
+            
+            // Always emit weather event (even if it's just a fallback message)
+            emit(AppointmentProgress.WeatherForecastComplete(weatherForecast, weatherDuration))
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Weather forecast emitted")}: ${weatherForecast.summary?.take(100)}")
+            
+            // Step 5: Check parking availability using Tavily
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("Checking parking availability...")} for ${selectedBranch.branchName}")
+            emit(AppointmentProgress.FetchingParkingInfo)
+            val parkingStart = System.currentTimeMillis()
+            
+            val parkingInfo = try {
+                val result = callParkingInfoAgent(location = selectedBranch.branchName)
+                logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Parking info retrieved successfully")}")
+                result
+            } catch (e: Exception) {
+                logger.error("${LogColors.ORCHESTRATOR} ${LogColors.red("Parking info FAILED")}: ${e.message}", e)
+                // Create a fallback parking result
+                ParkingInfoResult(
+                    location = selectedBranch.branchName,
+                    parkingAvailable = true,
+                    summary = "⚠️ Parking information unavailable. Please check with the facility directly for parking details."
+                )
+            }
+            val parkingDuration = System.currentTimeMillis() - parkingStart
+            
+            // Emit parking info event
+            emit(AppointmentProgress.ParkingInfoComplete(parkingInfo, parkingDuration))
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.green("Parking info emitted")}: ${parkingInfo.summary.take(100)}")
+            
+            // Step 6: Ask user for final booking confirmation (weather and parking shown separately above)
+            val confirmationMessage = buildString {
+                appendLine("✅ **Timeslot Available!**")
+                appendLine()
+                appendLine("📋 **Booking Summary:**")
+                appendLine("• **Appointment:** ${appointmentForm.appointmentGroup}")
+                appendLine("• **Location:** ${selectedBranch.branchName}")
+                appendLine("• **Time:** $selectedTimeslotDisplay")
+                timeslotValidationResult.timeslotId?.let { appendLine("• **Slot ID:** $it") }
+                appendLine()
+                appendLine("---")
+                appendLine("**Are you sure you want to book this appointment?**")
+                appendLine()
+                appendLine("• Reply **'yes'** to confirm and book")
+                appendLine("• Reply **'no'** or tell me a different time to change")
+            }
+            
+            // Construct full TimeslotInfo for booking - only startTime and endTime are required
+            // Note: Salesforce slots may not have an ID field, so we use startTime as a synthetic ID if needed
+            val bookingTimeslotInfo = if (timeslotValidationResult.startTime != null &&
+                                          timeslotValidationResult.endTime != null) {
+                val info = TimeslotInfo(
+                    timeslotId = timeslotValidationResult.timeslotId ?: timeslotValidationResult.startTime.toString(),
+                    startTime = timeslotValidationResult.startTime.toString(),
+                    endTime = timeslotValidationResult.endTime.toString(),
+                    serviceResourceId = timeslotValidationResult.serviceResourceId
+                )
+                logger.info("${LogColors.ORCHESTRATOR} Constructed TimeslotInfo: $info")
+                info
+            } else {
+                logger.warn("${LogColors.ORCHESTRATOR} Could NOT construct TimeslotInfo - missing required fields: startTime=${timeslotValidationResult.startTime}, endTime=${timeslotValidationResult.endTime}")
+                null
+            }
+            
+            emit(AppointmentProgress.PromptBookingConfirmation(
+                selectedTimeslot = selectedTimeslotDisplay,
+                timeslotId = timeslotValidationResult.timeslotId,
+                branchName = selectedBranch.branchName,
+                appointmentType = appointmentForm.appointmentGroup,
+                weatherForecast = null, // Weather shown separately
+                message = confirmationMessage,
+                timeslotInfo = bookingTimeslotInfo,
+                serviceTerritoryId = serviceTerritoryId
+            ))
+            
+            // STOP here and wait for user confirmation
+            logger.info("${LogColors.ORCHESTRATOR} ${LogColors.yellow("Booking confirmation prompt emitted - awaiting user response...")}")
+            return@flow
+            
+        } catch (e: Exception) {
+            logger.error("${LogColors.ORCHESTRATOR} Error during timeslot validation: ${e.message}", e)
+            emit(AppointmentProgress.Error(e.message ?: "Unknown error during timeslot validation"))
+        }
+    }
+    
+    /**
+     * Continue with actual booking after user confirms the timeslot.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    fun bookAppointmentAfterConfirmation(
+        appointmentForm: AppointmentForm,
+        selectedBranch: BranchInfo,
+        workTypeGroupId: String,
+        timeslotId: String?,
+        selectedTimeslot: String,
+        serviceTerritoryId: String? = null,
+        timeslotInfo: TimeslotInfo? = null
+    ): Flow<AppointmentProgress> = flow {
+        val overallStart = System.currentTimeMillis()
+        
+        logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION - FINAL BOOKING"))
+        logger.info("${LogColors.ORCHESTRATOR} User confirmed booking for timeslot: $selectedTimeslot")
+        logger.info("${LogColors.ORCHESTRATOR} WorkTypeGroupId: $workTypeGroupId")
+        logger.info("${LogColors.ORCHESTRATOR} ServiceTerritoryId: $serviceTerritoryId")
+        logger.info("${LogColors.ORCHESTRATOR} TimeslotId (param): $timeslotId")
+        logger.info("${LogColors.ORCHESTRATOR} TimeslotInfo (param): $timeslotInfo")
+        logger.info("${LogColors.ORCHESTRATOR} SelectedBranch.serviceTerritoryId: ${selectedBranch.serviceTerritoryId}")
+        
+        emit(AppointmentProgress.BookingConfirmed)
+        
+        try {
+            // Update form with selected branch location
             val updatedForm = appointmentForm.copy(
-                location = selectedBranch.branchName,
-                appointmentTime = actualAppointmentTime
+                location = selectedBranch.branchName
             )
             
-            // Step 4: Book appointment
+            // Step: Book appointment
             emit(AppointmentProgress.BookingAppointment)
             val bookingStart = System.currentTimeMillis()
             val bookingRequest = AppointmentBookingRequest(
                 appointmentForm = updatedForm,
                 locationReviewInfo = null,
-                workTypeGroupId = workTypeGroupId
+                workTypeGroupId = workTypeGroupId,
+                serviceTerritoryId = serviceTerritoryId ?: selectedBranch.serviceTerritoryId,
+                timeslotInfo = timeslotInfo
             )
             val bookingResult = callAppointmentBookingAgent(bookingRequest)
             val bookingDuration = System.currentTimeMillis() - bookingStart
@@ -676,11 +882,11 @@ class SchedulerAgentOrchestrator(
             
             emit(AppointmentProgress.BookingComplete(finalResult, totalDuration))
             
-            logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE (With Branch Selection)"))
+            logger.info(LogColors.orchestratorBanner("A2A SCHEDULER ORCHESTRATION COMPLETE (Final Booking)"))
             logger.info("${LogColors.ORCHESTRATOR} Total time: ${totalDuration}ms")
             
         } catch (e: Exception) {
-            logger.error("${LogColors.ORCHESTRATOR} Error during booking with branch selection: ${e.message}", e)
+            logger.error("${LogColors.ORCHESTRATOR} Error during final booking: ${e.message}", e)
             emit(AppointmentProgress.Error(e.message ?: "Unknown error during appointment booking"))
         }
     }
@@ -923,6 +1129,117 @@ Return the distance in kilometers and travel time in minutes."""
             transport.close()
         }
     }
+    
+    /**
+     * Call the Weather agent to get weather forecast for a location and date/time.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun callWeatherAgent(
+        location: String,
+        dateTime: LocalDateTime,
+        appointmentType: String? = null
+    ): WeatherForecastResult {
+        logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Calling weather agent at: ${endpoints.weatherUrl}")
+        
+        val transport = HttpJSONRPCClientTransport(url = endpoints.weatherUrl)
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = endpoints.weatherUrl.substringBefore(WEATHER_PATH),
+            path = WEATHER_CARD_PATH
+        )
+        val client = A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+
+        try {
+            logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Connecting to weather agent...")
+            client.connect()
+            logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Connected successfully")
+            
+            val contextId = Uuid.random().toString()
+            
+            val request = WeatherForecastRequest(
+                location = location,
+                dateTime = dateTime,
+                appointmentType = appointmentType
+            )
+            logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Sending request: $request")
+
+            val message = Message(
+                messageId = Uuid.random().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(json.encodeToString(WeatherForecastRequest.serializer(), request))),
+                contextId = contextId,
+                taskId = null
+            )
+
+            logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Waiting for response...")
+            val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
+            logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Got ${responses.size} responses")
+            
+            val result = extractArtifact<WeatherForecastResult>(responses, "weather-forecast")
+            logger.info("${LogColors.ORCHESTRATOR} [WEATHER] Extracted result: ${result.summary?.take(50)}")
+            return result
+        } finally {
+            transport.close()
+        }
+    }
+
+    /**
+     * Calls Tavily agent to check parking availability at the given location.
+     */
+    @OptIn(ExperimentalUuidApi::class)
+    private suspend fun callParkingInfoAgent(location: String): ParkingInfoResult {
+        logger.info("${LogColors.ORCHESTRATOR} [PARKING] Calling Tavily agent for parking info at: $location")
+        
+        val transport = HttpJSONRPCClientTransport(url = endpoints.tavilyUrl)
+        val agentCardResolver = UrlAgentCardResolver(
+            baseUrl = endpoints.tavilyUrl.substringBefore(TAVILY_PATH),
+            path = TAVILY_CARD_PATH
+        )
+        val client = A2AClient(transport = transport, agentCardResolver = agentCardResolver)
+
+        try {
+            logger.info("${LogColors.ORCHESTRATOR} [PARKING] Connecting to Tavily agent...")
+            client.connect()
+            logger.info("${LogColors.ORCHESTRATOR} [PARKING] Connected successfully")
+            
+            val contextId = Uuid.random().toString()
+            
+            // Create a parking-specific search request using LocationReviewRequest
+            // The Tavily agent will search for parking info based on the location
+            val request = LocationReviewRequest(
+                location = "$location parking facilities",
+                appointmentType = "PARKING ONLY - Give a 2-3 sentence summary about: parking availability, parking fees, and parking tips. Nothing else. Be very brief."
+            )
+            logger.info("${LogColors.ORCHESTRATOR} [PARKING] Sending request for parking info: $location")
+
+            val message = Message(
+                messageId = Uuid.random().toString(),
+                role = Role.User,
+                parts = listOf(TextPart(json.encodeToString(LocationReviewRequest.serializer(), request))),
+                contextId = contextId,
+                taskId = null
+            )
+
+            logger.info("${LogColors.ORCHESTRATOR} [PARKING] Waiting for response...")
+            val responses = client.sendMessageStreaming(Request(MessageSendParams(message = message))).toList()
+            logger.info("${LogColors.ORCHESTRATOR} [PARKING] Got ${responses.size} responses")
+            
+            // Extract the location review result and convert to parking info
+            val reviewResult = extractArtifact<LocationReviewResult>(responses, "location-review")
+            logger.info("${LogColors.ORCHESTRATOR} [PARKING] Extracted review result: ${reviewResult.reviewSummary.take(50)}")
+            
+            // Convert to ParkingInfoResult
+            return ParkingInfoResult(
+                location = location,
+                parkingAvailable = !reviewResult.reviewSummary.lowercase().contains("no parking"),
+                parkingFees = reviewResult.highlights.firstOrNull { it.contains("fee", ignoreCase = true) || it.contains("cost", ignoreCase = true) },
+                parkingHours = reviewResult.highlights.firstOrNull { it.contains("hour", ignoreCase = true) || it.contains("time", ignoreCase = true) },
+                parkingTips = reviewResult.tips,
+                summary = reviewResult.reviewSummary
+            )
+        } finally {
+            transport.close()
+        }
+    }
 
     @OptIn(ExperimentalUuidApi::class)
     private suspend fun callLocationReviewAgent(request: LocationReviewRequest): LocationReviewResult {
@@ -1038,6 +1355,12 @@ Return the distance in kilometers and travel time in minutes."""
 
     @OptIn(ExperimentalUuidApi::class)
     private suspend fun callAppointmentBookingAgent(request: AppointmentBookingRequest): AppointmentBookingResult {
+        logger.info("${LogColors.ORCHESTRATOR} Calling AppointmentBookingAgent with request:")
+        logger.info("${LogColors.ORCHESTRATOR}   - appointmentForm: ${request.appointmentForm.appointmentGroup} at ${request.appointmentForm.location}")
+        logger.info("${LogColors.ORCHESTRATOR}   - workTypeGroupId: ${request.workTypeGroupId}")
+        logger.info("${LogColors.ORCHESTRATOR}   - serviceTerritoryId: ${request.serviceTerritoryId}")
+        logger.info("${LogColors.ORCHESTRATOR}   - timeslotInfo: ${request.timeslotInfo}")
+        
         val transport = HttpJSONRPCClientTransport(url = endpoints.appointmentBookingUrl)
         val agentCardResolver = UrlAgentCardResolver(
             baseUrl = endpoints.appointmentBookingUrl.substringBefore(APPOINTMENT_BOOKING_PATH),
@@ -1048,11 +1371,14 @@ Return the distance in kilometers and travel time in minutes."""
         try {
             client.connect()
             val contextId = Uuid.random().toString()
+            
+            val serializedRequest = json.encodeToString(AppointmentBookingRequest.serializer(), request)
+            logger.info("${LogColors.ORCHESTRATOR} Serialized booking request: $serializedRequest")
 
             val message = Message(
                 messageId = Uuid.random().toString(),
                 role = Role.User,
-                parts = listOf(TextPart(json.encodeToString(AppointmentBookingRequest.serializer(), request))),
+                parts = listOf(TextPart(serializedRequest)),
                 contextId = contextId,
                 taskId = null
             )
@@ -1202,7 +1528,37 @@ Return the distance in kilometers and travel time in minutes."""
         }
     }
     
-    private fun parseAndApplyPreferredTime(preferredTime: String?, baseTime: LocalDateTime): LocalDateTime {
+    /**
+     * Parses a datetime string that may have various formats:
+     * - 2026-01-12T20:45:00Z (with Z suffix)
+     * - 2026-01-12T20:45:00.000Z (with milliseconds and Z)
+     * - 2026-01-12T20:45:00 (without Z)
+     * - 2026-01-12T20:45 (without seconds)
+     */
+    private fun parseFlexibleDateTime(dateTimeStr: String): LocalDateTime {
+        var cleanedStr = dateTimeStr.trim()
+        
+        // Remove Z suffix if present (LocalDateTime doesn't support timezone)
+        if (cleanedStr.endsWith("Z")) {
+            cleanedStr = cleanedStr.dropLast(1)
+        }
+        
+        // Remove milliseconds if present (e.g., .000 or .123)
+        val millisPattern = Regex("""\.\d{1,3}$""")
+        cleanedStr = cleanedStr.replace(millisPattern, "")
+        
+        // Add seconds if missing (format: 2026-01-12T20:45)
+        val noSecondsPattern = Regex("""^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$""")
+        if (noSecondsPattern.matches(cleanedStr)) {
+            cleanedStr = "$cleanedStr:00"
+        }
+        
+        return LocalDateTime.parse(cleanedStr)
+    }
+    
+    private fun parseAndApplyPreferredTime(preferredTime: String?, baseTimeStr: String): LocalDateTime {
+        val baseTime = parseFlexibleDateTime(baseTimeStr)
+        
         if (preferredTime == null) {
             // User confirmed without specifying a different time - use base time
             return baseTime
